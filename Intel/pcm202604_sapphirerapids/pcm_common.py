@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
@@ -199,6 +200,9 @@ def build_command(
 def run_monitor(
     args: argparse.Namespace,
     native_arguments: Sequence[str] = (),
+    *,
+    use_sudo: bool = False,
+    suppressed_diagnostics: Sequence[str] = (),
 ) -> int:
     """Execute one PCM utility and preserve its native, version-specific CSV."""
 
@@ -206,16 +210,25 @@ def run_monitor(
         binary = resolve_binary(args.binary)
         diagnostics = diagnostic_path(args)
         command = build_command(binary, args, native_arguments)
+        environment_values = [
+            f"PCM_NO_MSR={'1' if args.no_msr else '0'}",
+            f"PCM_KEEP_NMI_WATCHDOG={'0' if args.disable_nmi_watchdog else '1'}",
+        ]
         if args.dry_run:
-            print(
-                " ".join(
-                    [
-                        f"PCM_NO_MSR={'1' if args.no_msr else '0'}",
-                        f"PCM_KEEP_NMI_WATCHDOG={'0' if args.disable_nmi_watchdog else '1'}",
-                        shlex.join(command),
-                    ]
-                )
-            )
+            printable_command = command
+            if use_sudo and os.geteuid() != 0:
+                printable_command = [
+                    "sudo",
+                    "--prompt",
+                    "[sudo] password for %u:\n",
+                    "--",
+                    shutil.which("env") or "/usr/bin/env",
+                    *environment_values,
+                    *command,
+                ]
+                print(shlex.join(printable_command))
+            else:
+                print(" ".join(environment_values + [shlex.join(command)]))
             print(f"diagnostics: {diagnostics.resolve()}")
             return 0
         prepare_paths(args.output, diagnostics, args.overwrite)
@@ -229,17 +242,89 @@ def run_monitor(
         "0" if args.disable_nmi_watchdog else "1"
     )
 
+    elevated = use_sudo and os.geteuid() != 0
+    if elevated:
+        sudo = shutil.which("sudo")
+        env = shutil.which("env") or "/usr/bin/env"
+        if sudo is None:
+            print("error: sudo is required but was not found on PATH", file=sys.stderr)
+            return 2
+        print("pcm-iio needs privileged PCI topology access; invoking sudo.", file=sys.stderr)
+        # Pre-create a new artifact as the calling user. pcm-iio truncates the
+        # existing inode, so sudo does not make ordinary outputs root-owned.
+        if not args.output.exists():
+            args.output.touch()
+        command = [
+            sudo,
+            "--prompt",
+            "[sudo] password for %u:\n",
+            "--",
+            env,
+            *environment_values,
+            *command,
+        ]
+
+    iterations = sample_iterations(args)
+    limit_description = (
+        f"{iterations} sample(s)"
+        if iterations is not None
+        else "continuously until Ctrl+C"
+    )
+    print(
+        f"collecting with {binary.name} to {args.output.resolve()} "
+        f"({limit_description})",
+        file=sys.stderr,
+    )
+    if binary.name == "pcm-iio":
+        print(
+            "pcm-iio initialization and the first CSV rows may take several seconds.",
+            file=sys.stderr,
+        )
+
     # pcm-iio loads its opCode-<family>-<model>.txt beside the installed binary.
     # Using that directory is harmless for the other PCM utilities as well.
     with diagnostics.open("w", encoding="utf-8") as error_stream:
+        capture_diagnostics = elevated or bool(suppressed_diagnostics)
         process = subprocess.Popen(
             command,
             cwd=binary.parent,
             env=environment,
             stdout=subprocess.DEVNULL,
-            stderr=error_stream,
-            start_new_session=True,
+            stderr=subprocess.PIPE if capture_diagnostics else error_stream,
+            text=capture_diagnostics,
+            start_new_session=not elevated,
         )
+
+        relay_thread: threading.Thread | None = None
+        if capture_diagnostics:
+            assert process.stderr is not None
+
+            def relay_stderr() -> None:
+                """Retain useful diagnostics without known repetitive noise."""
+
+                suppressed_count = 0
+                for line in process.stderr:
+                    if any(pattern in line for pattern in suppressed_diagnostics):
+                        suppressed_count += 1
+                        continue
+                    error_stream.write(line)
+                    error_stream.flush()
+                    if elevated:
+                        sys.stderr.write(line)
+                        sys.stderr.flush()
+                if suppressed_count:
+                    summary = (
+                        "[pcm wrapper] suppressed "
+                        f"{suppressed_count} known non-fatal topology warning line(s).\n"
+                    )
+                    error_stream.write(summary)
+                    error_stream.flush()
+                    if elevated:
+                        sys.stderr.write(summary)
+                        sys.stderr.flush()
+
+            relay_thread = threading.Thread(target=relay_stderr, daemon=True)
+            relay_thread.start()
 
         received_signal: int | None = None
 
@@ -247,7 +332,10 @@ def run_monitor(
             nonlocal received_signal
             received_signal = signum
             try:
-                os.killpg(process.pid, signum)
+                if elevated:
+                    process.send_signal(signum)
+                else:
+                    os.killpg(process.pid, signum)
             except ProcessLookupError:
                 pass
 
@@ -258,10 +346,16 @@ def run_monitor(
         try:
             return_code = process.wait()
         finally:
+            if relay_thread is not None:
+                relay_thread.join()
             for signum, handler in previous_handlers.items():
                 signal.signal(signum, handler)
 
     if received_signal is not None:
+        if args.output.is_file() and args.output.stat().st_size > 0:
+            print(f"stopped; partial CSV saved to {args.output}", file=sys.stderr)
+        else:
+            print("stopped before PCM wrote its first CSV sample", file=sys.stderr)
         return 128 + received_signal
     if return_code != 0:
         print(
