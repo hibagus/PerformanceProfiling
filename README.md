@@ -1,160 +1,56 @@
+<a id="readme-top"></a>
+
+<div align="center">
+
 # Performance Profiling Utilities
 
+### Lightweight telemetry for accelerator servers
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platforms-AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Dell-blue)](#repository-layout)
-[![Contributions welcome](https://img.shields.io/badge/Contributions-welcome-brightgreen.svg)](#contributing)
+[![Platforms](https://img.shields.io/badge/AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Dell-555?logo=linux&logoColor=white)](#tool-catalog)
+[![Contributions](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](#contributing)
 
-A collection of lightweight scripts, parsers, and configuration files for
-collecting and processing performance telemetry from accelerator servers.
+Small, inspectable tools for collecting CPU, GPU, interconnect, network, and
+platform telemetry without deploying a full monitoring stack.
 
-The repository currently covers AMD GPU telemetry and interconnect bandwidth,
-Intel CPU, PCIe, IIO, and UPI counters, AMD CPU memory and socket-interconnect
-counters, NVIDIA PCIe and NVLink throughput, Mellanox InfiniBand port
-throughput, and Dell iDRAC telemetry processing.
+[Get started](#getting-started) · [Browse tools](#tool-catalog) · [Choose a monitor](#choosing-a-monitor) · [Contribute](#contributing)
 
-## Table of contents
+</div>
 
-- [Overview](#overview)
-- [Repository layout](#repository-layout)
-- [Current tools](#current-tools)
-- [Legacy utilities](#legacy-utilities)
-- [Getting started](#getting-started)
-- [Choosing a tool](#choosing-a-tool)
-- [Output and data handling](#output-and-data-handling)
-- [Compatibility and support](#compatibility-and-support)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
+<details>
+  <summary>Table of contents</summary>
+  <ol>
+    <li><a href="#about-the-project">About the project</a></li>
+    <li><a href="#getting-started">Getting started</a></li>
+    <li><a href="#tool-catalog">Tool catalog</a></li>
+    <li><a href="#choosing-a-monitor">Choosing a monitor</a></li>
+    <li><a href="#output-and-data-handling">Output and data handling</a></li>
+    <li><a href="#compatibility-and-support">Compatibility and support</a></li>
+    <li><a href="#project-layout">Project layout</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
 
-## Overview
+## About the project
 
-The project provides small, inspectable utilities for situations where a full
-monitoring stack is unnecessary or unavailable. Typical uses include:
+Performance Profiling Utilities is a collection of focused monitoring scripts,
+parsers, and counter configurations for accelerator servers. The tools record
+vendor telemetry alongside benchmarks or applications and produce CSV suitable
+for later analysis.
 
-- Recording GPU power, temperature, clocks, utilization, and memory usage
-- Measuring PCIe, xGMI, NVLink, or InfiniBand traffic
-- Collecting counters alongside benchmark or application runs
-- Converting vendor telemetry into CSV suitable for later analysis
-- Flattening or summarizing previously collected CSV data
+The actively maintained toolkits cover:
 
-Tools are organized first by hardware vendor and then, where applicable, by
-software or hardware generation. Documentation and requirements can differ
-between directories, so consult the README nearest to the selected tool.
+- AMD Instinct GPU telemetry, PCIe bandwidth, and peer-to-peer xGMI traffic.
+- Intel CPU, cache, memory, power, PCIe IIO, and UPI counters.
 
-## Repository layout
+Older utilities for AMD EPYC, NVIDIA, Mellanox InfiniBand, and Dell iDRAC are
+retained under `legacy/` for reference and reproducibility. Always consult the
+README nearest to a tool because requirements and counter semantics vary by
+platform.
 
-```text
-PerformanceProfiling/
-├── AMD/
-│   ├── rocm10.0-Mi300X/
-│   │   ├── README.md
-│   │   ├── amdsmi_common.py
-│   │   ├── amdsmi_gpu_monitor.py
-│   │   └── amdsmi_xgmi_bw_monitor.py
-│   └── legacy/
-│       ├── AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/
-│       └── AMD_ROCM_SMI/
-├── Intel/
-│   └── pcm202604_sapphirerapids/
-│       ├── README.md
-│       ├── pcm_common.py
-│       ├── pcm_cpu_monitor.py
-│       ├── pcm_iio_monitor.py
-│       └── pcm_pcie_monitor.py
-├── Dell/
-│   └── legacy/IDRAC_Fan_Speed/
-├── Mellanox/
-│   └── legacy/Mellanox_Infiniband_Throughput_Counter/
-├── NVIDIA/
-│   └── legacy/
-│       ├── NVIDIA_PCIe_Throughput_Counter/
-│       └── NVLink_Throughput_Counter/
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
-Directories named `legacy` contain older, environment-specific utilities.
-They are retained for reference and reproducibility, but should be reviewed
-and validated on the target system before production use.
-
-## Current tools
-
-### AMD ROCm 10.0 and MI300X
-
-The actively documented toolset is located in
-[`AMD/rocm10.0-Mi300X`](AMD/rocm10.0-Mi300X/README.md).
-
-| Tool | Purpose | Output |
-| --- | --- | --- |
-| `amdsmi_gpu_monitor.py` | Collects GPU temperature, power, clocks, utilization, VRAM usage, and instantaneous PCIe bandwidth. | CSV |
-| `amdsmi_xgmi_bw_monitor.py` | Converts cumulative AMD-SMI xGMI counters into per-peer bandwidth and utilization. | CSV |
-| `amdsmi_common.py` | Provides shared argument, GPU-selection, and safe output-file helpers. | Internal module |
-
-These scripts were tested on an eight-GPU AMD Instinct MI300X bare-metal
-system with Python 3.10, ROCm 10.0, AMD-SMI 27.0.0, and AMDGPU 7.1.3.
-They depend only on the Python standard library and the `amd-smi` executable.
-
-Important characteristics include:
-
-- Selection of all GPUs or specific GPU indices
-- Finite-duration or continuous monitoring
-- CSV output to a file, standard output, or both
-- Safe overwrite and append behavior
-- Explicit PCIe directionality and units in the
-  `pcie_bw_bidirectional_mbps` column (transmit + receive)
-- Actual elapsed-time accounting for calculated xGMI rates
-- Detection of xGMI counter resets or wraps
-- Configurable xGMI link capacity, timeout, and error threshold
-
-See the [MI300X monitoring guide](AMD/rocm10.0-Mi300X/README.md) for complete
-installation instructions, CLI examples, CSV schemas, units, validation
-results, and troubleshooting.
-
-### Intel PCM 202604 and Sapphire Rapids
-
-The actively documented Intel toolset is located in
-[`Intel/pcm202604_sapphirerapids`](Intel/pcm202604_sapphirerapids/README.md).
-
-| Tool | Purpose | Output |
-| --- | --- | --- |
-| `pcm_cpu_monitor.py` | Collects CPU, memory, cache, power, and supported UPI link metrics. | Native PCM CSV |
-| `pcm_pcie_monitor.py` | Collects aggregate PCIe transactions and estimated bandwidth per socket. | Native PCM CSV |
-| `pcm_iio_monitor.py` | Collects timestamped PCIe bandwidth per IIO stack, root port, and device. | Native PCM CSV |
-
-## Legacy utilities
-
-The following tools predate the current MI300X monitors or were created for a
-specific experiment. Their assumptions may be tightly coupled to device count,
-command output, input filename, CSV column positions, or system topology.
-
-### AMD
-
-| Path | Description | Primary dependency |
-| --- | --- | --- |
-| [`AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/README.md) | AMD uProf PCM configuration for PCIe, memory-channel, and intersocket xGMI counters on AMD EPYC Milan family `0x19`, model `0x01`. | AMD uProf PCM |
-| `AMD/legacy/AMD_ROCM_SMI/rocm-smi-parser.py` | Flattens multi-row ROCm-SMI CSV samples by timestamp. | Python, pandas, NumPy |
-| `AMD/legacy/AMD_ROCM_SMI/amd-smi-parser-1gpu.py` | Extracts and summarizes one-GPU benchmark telemetry using fixed input layouts and filename metadata. | Python, pandas, NumPy, numpyencoder |
-| `AMD/legacy/AMD_ROCM_SMI/amd-smi-parser-8gpus.py` | Extracts and summarizes eight-GPU LLM-serving telemetry using fixed input layouts and filename metadata. | Python, pandas, NumPy, numpyencoder |
-
-### NVIDIA
-
-| Path | Description | Primary dependency |
-| --- | --- | --- |
-| `NVIDIA/legacy/NVIDIA_PCIe_Throughput_Counter/nvidia_pcie_throughput.sh` | Polls NVIDIA-SMI PCIe transmit and receive throughput and prints per-GPU and aggregate CSV-like rows. | Bash, `nvidia-smi` |
-| [`NVIDIA/legacy/NVLink_Throughput_Counter`](NVIDIA/legacy/NVLink_Throughput_Counter/README.md) | Calculates per-GPU NVLink transmit and receive rates from cumulative NVIDIA-SMI counters. | Bash, `nvidia-smi` |
-
-### Mellanox
-
-| Path | Description | Primary dependency |
-| --- | --- | --- |
-| [`Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter`](Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/README.md) | Reads InfiniBand transmit and receive counters from sysfs and calculates per-port and aggregate throughput. | Bash, Linux InfiniBand sysfs |
-
-### Dell
-
-| Path | Description | Primary dependency |
-| --- | --- | --- |
-| `Dell/legacy/IDRAC_Fan_Speed/idrac-fan-speed-parser.py` | Pivots multi-row iDRAC fan-speed CSV samples into a wider timestamp-indexed table. | Python, pandas, NumPy |
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Getting started
 
@@ -165,117 +61,168 @@ git clone https://github.com/hibagus/PerformanceProfiling.git
 cd PerformanceProfiling
 ```
 
-For the current AMD MI300X tools:
+### AMD ROCm and MI300X
 
 ```bash
 cd AMD/rocm10.0-Mi300X
-
-python3 --version
-amd-smi version
-
-python3 amdsmi_gpu_monitor.py --help
-python3 amdsmi_xgmi_bw_monitor.py --help
+python3 amdsmi_combined_monitor.py --help
+python3 amdsmi_combined_monitor.py -g 0 -w 1 -W 5
 ```
 
-Run five-second smoke tests on GPU 0:
+See the [AMD MI300X monitoring guide](AMD/rocm10.0-Mi300X/README.md) for
+installation, CSV schemas, units, and validation results.
+
+### Intel PCM and Sapphire Rapids
 
 ```bash
-python3 amdsmi_gpu_monitor.py -g 0 -w 1 -W 5 --stdout
-python3 amdsmi_xgmi_bw_monitor.py -g 0 -w 1 -W 5 --stdout
+cd Intel/pcm202604_sapphirerapids
+python3 pcm_iio_monitor.py --help
+python3 pcm_iio_monitor.py --duration 5
 ```
 
-For a legacy utility, inspect its source and local README before running it.
-Install only the dependencies required by that utility and confirm that its
-device-count, filename, counter-unit, and column-layout assumptions match the
-target environment.
+See the [Intel PCM monitoring guide](Intel/pcm202604_sapphirerapids/README.md)
+for binary discovery, permissions, monitor selection, and TransferBench
+validation workflows.
 
-## Choosing a tool
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-| Monitoring goal | Recommended starting point |
+## Tool catalog
+
+### Current toolkits
+
+| Platform | Tool | Purpose |
+| --- | --- | --- |
+| AMD ROCm 10.0 / MI300X | [`amdsmi_combined_monitor.py`](AMD/rocm10.0-Mi300X/README.md#combined-monitor) | Collect and merge GPU telemetry with peer xGMI utilization |
+| AMD ROCm 10.0 / MI300X | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) | Temperature, power, clocks, utilization, VRAM, and aggregate PCIe bandwidth |
+| AMD ROCm 10.0 / MI300X | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) | Per-peer xGMI bandwidth and utilization |
+| Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
+| Intel PCM 202604 / Sapphire Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
+| Intel PCM 202604 / Sapphire Rapids | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) | PCIe bandwidth by socket, IIO stack, root port, and device |
+| Intel PCM 202604 / Sapphire Rapids | [`validate_pcm_transferbench.py`](Intel/pcm202604_sapphirerapids/README.md#controlled-validation) | Focused PCIe, IIO, and UPI validation cases |
+| Intel PCM 202604 / Sapphire Rapids | [`validate_pcm_cpu_gpu_matrix.py`](Intel/pcm202604_sapphirerapids/README.md#full-cpu-to-gpu-matrix) | Complete CPU-NUMA × GPU × direction validation matrix |
+
+### Legacy utilities
+
+These tools may assume a fixed device count, filename convention, counter
+layout, or topology. Review and validate them on the target system before use.
+
+| Platform | Utility | Primary dependency |
+| --- | --- | --- |
+| AMD EPYC Milan | [`AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/README.md) | AMD uProf PCM |
+| AMD ROCm-SMI | Parsers under `AMD/legacy/AMD_ROCM_SMI/` | Python, pandas, NumPy |
+| NVIDIA PCIe | `NVIDIA/legacy/NVIDIA_PCIe_Throughput_Counter/` | Bash, `nvidia-smi` |
+| NVIDIA NVLink | [`NVLink_Throughput_Counter`](NVIDIA/legacy/NVLink_Throughput_Counter/README.md) | Bash, `nvidia-smi` |
+| Mellanox InfiniBand | [`Mellanox_Infiniband_Throughput_Counter`](Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/README.md) | Bash, Linux InfiniBand sysfs |
+| Dell iDRAC | `Dell/legacy/IDRAC_Fan_Speed/idrac-fan-speed-parser.py` | Python, pandas, NumPy |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Choosing a monitor
+
+| Measurement goal | Recommended starting point |
 | --- | --- |
-| MI300X power, temperature, clocks, utilization, VRAM, or PCIe bandwidth | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) |
-| MI300X GPU-to-GPU xGMI bandwidth and utilization | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) |
-| Intel CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#upi-utilization) |
-| CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#pcm-iio) |
-| Aggregate Intel PCIe traffic by CPU socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#pcm-pcie) |
+| AMD GPU power, temperature, clocks, utilization, VRAM, and PCIe | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) |
+| AMD GPU-to-GPU xGMI bandwidth | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) |
+| Combined AMD GPU and xGMI telemetry | [`amdsmi_combined_monitor.py`](AMD/rocm10.0-Mi300X/README.md#combined-monitor) |
+| Intel CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) |
+| CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) |
+| Approximate aggregate Intel PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) |
 | AMD EPYC Milan PCIe, DRAM, or intersocket xGMI counters | [`0x19_0x01.conf`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/0x19_0x01.conf) |
-| NVIDIA PCIe throughput | `NVIDIA/legacy/NVIDIA_PCIe_Throughput_Counter/` |
-| NVIDIA NVLink throughput | `NVIDIA/legacy/NVLink_Throughput_Counter/` |
-| Mellanox InfiniBand port throughput | `Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/` |
-| Flatten an older ROCm-SMI or iDRAC CSV | The appropriate parser under `AMD/legacy/` or `Dell/legacy/` |
+| NVIDIA PCIe or NVLink throughput | The corresponding utility under `NVIDIA/legacy/` |
+| Mellanox InfiniBand throughput | `Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/` |
+| Flatten an older ROCm-SMI or iDRAC CSV | The corresponding parser under `AMD/legacy/` or `Dell/legacy/` |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Output and data handling
 
-Generated telemetry can be large and machine-specific. The repository
-`.gitignore` excludes common generated data and development artifacts,
-including:
-
-- `*.csv`
-- `runs/`
-- `artifacts/`
-- Python bytecode and cache directories
-- Virtual environments
-- Logs, coverage output, and editor metadata
+Generated telemetry can be large and machine-specific. The repository ignores
+common generated artifacts, including CSV files, logs, `runs/`, `artifacts/`,
+Python caches, virtual environments, and editor metadata.
 
 Use a dedicated output directory for longer captures:
 
 ```bash
-mkdir -p runs/telemetry
-cd AMD/rocm10.0-Mi300X
-python3 amdsmi_gpu_monitor.py --output-dir ../../runs/telemetry -W 300
+python3 AMD/rocm10.0-Mi300X/amdsmi_gpu_monitor.py \
+  --output-dir runs/telemetry \
+  --duration 300
 ```
 
-Before sharing telemetry, check it for hostnames, device identifiers, workload
-names, or other environment-specific information.
+Before sharing telemetry, inspect it for hostnames, device identifiers,
+workload names, and other environment-specific information.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Compatibility and support
 
-Hardware-management interfaces and command output can change between driver,
-firmware, and vendor-tool versions. Treat each directory's documented tested
-environment as the compatibility baseline rather than a guarantee for every
-system.
+Hardware counters and command output can change across drivers, firmware, and
+vendor-tool releases. Treat each toolkit's tested environment as a compatibility
+baseline, not a guarantee for every platform.
 
-When moving a tool to a different environment:
+When bringing a tool to another environment:
 
 1. Record the hardware topology and relevant software versions.
-2. Inspect the raw vendor-tool output before relying on a parser.
-3. Run an idle control capture.
-4. Generate a known workload and confirm that the expected counters respond.
-5. Verify counter units, direction semantics, sampling intervals, and link
-   capacities.
+2. Inspect raw vendor-tool output before relying on a parser.
+3. Capture an idle baseline.
+4. Generate a controlled workload and confirm the expected counters respond.
+5. Verify units, direction semantics, sampling intervals, and link capacities.
 
-The legacy utilities are provided as-is and may require modification for newer
-tool output or different hardware layouts.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Project layout
+
+```text
+PerformanceProfiling/
+├── AMD/
+│   ├── rocm10.0-Mi300X/
+│   └── legacy/
+├── Intel/
+│   └── pcm202604_sapphirerapids/
+├── NVIDIA/
+│   └── legacy/
+├── Mellanox/
+│   └── legacy/
+├── Dell/
+│   └── legacy/
+├── LICENSE
+└── README.md
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contributing
 
-Issues and pull requests are welcome. When reporting a problem or adding a new
-tool, include as much of the following as practical:
+Issues and pull requests are welcome. Include as much of the following as
+practical when reporting a problem or adding a tool:
 
-- Hardware model and topology
-- Operating system and kernel version
-- Driver, firmware, and vendor-tool versions
-- Exact command used
-- Sanitized raw input or a minimal representative sample
-- Expected and observed behavior
-- Units and conversion assumptions
+- Hardware model and topology.
+- Operating system and kernel version.
+- Driver, firmware, and vendor-tool versions.
+- Exact command used and sanitized representative input.
+- Expected and observed behavior.
+- Units and conversion assumptions.
 
 Keep generated telemetry and local environments out of commits. Prefer a new
-version- or platform-specific directory when supporting a substantially
-different schema instead of silently changing the behavior of an established
-legacy tool.
+version- or platform-specific directory when a substantially different schema
+is required.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## License
 
 Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Acknowledgments
 
 - [AMD ROCm](https://rocm.docs.amd.com/)
 - [AMD-SMI](https://rocm.docs.amd.com/projects/amdsmi/en/latest/)
+- [Intel Performance Counter Monitor](https://github.com/intel/pcm)
 - [NVIDIA System Management Interface](https://developer.nvidia.com/system-management-interface)
-- [NVIDIA NVLink](https://www.nvidia.com/en-us/data-center/nvlink/)
 - [NVIDIA Networking](https://www.nvidia.com/en-us/networking/)
 - [Dell Technologies iDRAC](https://www.dell.com/en-us/lp/dt/open-manage-idrac)
-- README organization inspired by
-  [Best README Template](https://github.com/othneildrew/Best-README-Template)
+- README structure inspired by
+  [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
