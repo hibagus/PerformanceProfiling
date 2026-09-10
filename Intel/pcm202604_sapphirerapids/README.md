@@ -7,7 +7,7 @@
 ### Portable CPU, PCIe, IIO, and UPI telemetry for Intel Sapphire Rapids
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Intel PCM](https://img.shields.io/badge/Intel_PCM-202604-0071C5)](https://github.com/intel/pcm)
+[![Intel PCM](https://img.shields.io/badge/Intel_PCM-202604-0071C5)](https://github.com/intel/pcm/releases/tag/202604)
 [![Platform](https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&logoColor=black)](#prerequisites)
 
 Dependency-free Python wrappers for collecting native Intel® Performance
@@ -59,12 +59,27 @@ Required for the monitoring scripts:
 - Linux on a supported Intel server platform; validation was performed on
   Sapphire Rapids.
 - Python 3.10 or newer. The wrappers use only the standard library.
-- Intel PCM 202604 with `pcm`, `pcm-pcie`, and `pcm-iio` compiled or installed.
+- [Intel PCM release `202604`](https://github.com/intel/pcm/releases/tag/202604)
+  with `pcm`, `pcm-pcie`, and `pcm-iio` compiled or installed.
 - Permission to use the required core and uncore performance counters.
 
 TransferBench is **not required** to run `pcm_cpu_monitor.py`,
 `pcm_pcie_monitor.py`, or `pcm_iio_monitor.py`. It and its GPU runtime
 dependencies are optional and used only by the two validation scripts.
+
+### Supported Intel PCM release
+
+This toolkit was implemented and validated against one pinned Intel PCM
+revision:
+
+| Component | Pinned value |
+| --- | --- |
+| Release/tag | [`202604`](https://github.com/intel/pcm/releases/tag/202604) |
+| Commit | [`abb6bce87cc2ed23d6677541ebcfc47ca769d1ed`](https://github.com/intel/pcm/commit/abb6bce87cc2ed23d6677541ebcfc47ca769d1ed) |
+
+Other Intel PCM revisions may change command options, CSV schemas, counter
+availability, or behavior. Use release `202604` when reproducing the documented
+validation results.
 
 ### Binary discovery
 
