@@ -16,14 +16,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pcm_common import positive_float, positive_int, utc_run_id
+from pcm_common import positive_float, positive_int, resolve_binary, utc_run_id
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_TRANSFERBENCH = Path(
-    "/home/bagus/Dissagregated_PD/TransferBench_Source/TransferBench/TransferBench"
+DEFAULT_TRANSFERBENCH = Path(os.environ.get("TRANSFERBENCH_BIN", "TransferBench"))
+DEFAULT_ROCM_LIB = (
+    Path(value) if (value := os.environ.get("ROCM_LIB_DIR")) else None
 )
-DEFAULT_ROCM_LIB = Path("/opt/rocm/core-10.0/lib")
 ALL_CASES = (
     "pcie_h2d",
     "pcie_d2h",
@@ -55,13 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--transferbench",
         type=Path,
         default=DEFAULT_TRANSFERBENCH,
-        help=f"TransferBench executable (default: {DEFAULT_TRANSFERBENCH})",
+        help="TransferBench executable (default: $TRANSFERBENCH_BIN, then PATH)",
     )
     parser.add_argument(
         "--rocm-lib",
         type=Path,
         default=DEFAULT_ROCM_LIB,
-        help=f"directory prepended to LD_LIBRARY_PATH (default: {DEFAULT_ROCM_LIB})",
+        help="directory prepended to LD_LIBRARY_PATH (default: $ROCM_LIB_DIR, if set)",
     )
     parser.add_argument("--gpu", type=int, default=0, help="GPU index (default: 0)")
     parser.add_argument(
@@ -139,10 +139,11 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
 
 def transferbench_environment(args: argparse.Namespace) -> dict[str, str]:
     environment = os.environ.copy()
-    old_library_path = environment.get("LD_LIBRARY_PATH")
-    environment["LD_LIBRARY_PATH"] = str(args.rocm_lib) + (
-        f":{old_library_path}" if old_library_path else ""
-    )
+    if args.rocm_lib is not None:
+        old_library_path = environment.get("LD_LIBRARY_PATH")
+        environment["LD_LIBRARY_PATH"] = str(args.rocm_lib) + (
+            f":{old_library_path}" if old_library_path else ""
+        )
     environment["NUM_ITERATIONS"] = f"-{args.duration}"
     environment["NUM_WARMUPS"] = "1"
     environment["HIDE_ENV"] = "1"
@@ -188,10 +189,12 @@ def print_command(environment: dict[str, str], command: list[str]) -> None:
 
 
 def preflight(args: argparse.Namespace, environment: dict[str, str]) -> None:
-    binary = args.transferbench.expanduser().resolve()
-    if not binary.is_file() or not os.access(binary, os.X_OK):
-        raise RuntimeError(f"TransferBench is not executable: {binary}")
-    if not args.rocm_lib.expanduser().is_dir():
+    try:
+        binary = resolve_binary(str(args.transferbench))
+    except ValueError as error:
+        raise RuntimeError(str(error)) from error
+    args.transferbench = binary
+    if args.rocm_lib is not None and not args.rocm_lib.expanduser().is_dir():
         raise RuntimeError(f"ROCm library directory does not exist: {args.rocm_lib}")
 
     result = subprocess.run(
@@ -315,7 +318,7 @@ def run_case(
         str(pcm_stderr),
     ]
     benchmark_command = [
-        str(args.transferbench.expanduser().resolve()),
+        str(args.transferbench.expanduser()),
         "cmdline",
         args.size,
         expression,
@@ -426,7 +429,7 @@ def main() -> int:
             print_command({}, monitor)
             print_command(
                 environment,
-                [str(args.transferbench.expanduser().resolve()), "cmdline", args.size, expression],
+                [str(args.transferbench.expanduser()), "cmdline", args.size, expression],
             )
         return 0
 
@@ -438,7 +441,11 @@ def main() -> int:
         manifest: dict[str, object] = {
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "host": os.uname().nodename,
-            "arguments": vars(args) | {"transferbench": str(args.transferbench), "rocm_lib": str(args.rocm_lib), "output_dir": str(run_dir)},
+            "arguments": vars(args) | {
+                "transferbench": str(args.transferbench),
+                "rocm_lib": str(args.rocm_lib) if args.rocm_lib else None,
+                "output_dir": str(run_dir),
+            },
             "results": [],
         }
         manifest_path = run_dir / "manifest.json"

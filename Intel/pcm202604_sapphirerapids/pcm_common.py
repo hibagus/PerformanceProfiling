@@ -17,16 +17,6 @@ from pathlib import Path
 from typing import Sequence
 
 
-LOCAL_PCM_BIN_DIR = (
-    Path(__file__).resolve().parents[3]
-    / "Dissagregated_PD"
-    / "pcm_source"
-    / "pcm"
-    / "build-202604"
-    / "bin"
-)
-
-
 def positive_float(value: str) -> float:
     """Parse a finite floating-point value greater than zero."""
 
@@ -56,14 +46,11 @@ def utc_run_id() -> str:
 
 
 def default_binary(tool: str, environment_variable: str) -> str:
-    """Prefer an explicit environment setting, this host's build, then PATH."""
+    """Prefer an explicit environment setting, then PATH."""
 
     configured = os.environ.get(environment_variable)
     if configured:
         return configured
-    local_binary = LOCAL_PCM_BIN_DIR / tool
-    if local_binary.is_file() and os.access(local_binary, os.X_OK):
-        return str(local_binary)
     return shutil.which(tool) or tool
 
 
@@ -125,8 +112,7 @@ def add_common_arguments(
         "--binary",
         default=default_binary(tool, environment_variable),
         help=(
-            f"{tool} executable (default: ${environment_variable}, local "
-            "build-202604 binary, or PATH)"
+            f"{tool} executable (default: ${environment_variable}, then PATH)"
         ),
     )
     access = parser.add_mutually_exclusive_group()

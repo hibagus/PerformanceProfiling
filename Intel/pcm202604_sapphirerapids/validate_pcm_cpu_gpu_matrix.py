@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pcm_common import positive_float, positive_int, utc_run_id
+from pcm_common import positive_float, positive_int, resolve_binary, utc_run_id
 from validate_pcm_transferbench import (
     DEFAULT_ROCM_LIB,
     DEFAULT_TRANSFERBENCH,
@@ -60,11 +60,10 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
 def child_command(
     args: argparse.Namespace, cpu: int, gpu: int, output_dir: Path
 ) -> list[str]:
-    return [
+    command = [
         sys.executable,
         str(SCRIPT_DIR / "validate_pcm_transferbench.py"),
-        "--transferbench", str(args.transferbench.expanduser().resolve()),
-        "--rocm-lib", str(args.rocm_lib.expanduser().resolve()),
+        "--transferbench", str(args.transferbench.expanduser()),
         "--gpu", str(gpu),
         "--cpu-node", str(cpu),
         "--size", args.size,
@@ -76,17 +75,23 @@ def child_command(
         "--cases", "iio_h2d", "iio_d2h", "upi_h2d", "upi_d2h",
         "--output-dir", str(output_dir),
     ]
+    if args.rocm_lib is not None:
+        command[4:4] = ["--rocm-lib", str(args.rocm_lib.expanduser())]
+    return command
 
 
 def topology_probe(args: argparse.Namespace) -> str:
-    binary = args.transferbench.expanduser().resolve()
-    if not binary.is_file() or not os.access(binary, os.X_OK):
-        raise RuntimeError(f"TransferBench is not executable: {binary}")
+    try:
+        binary = resolve_binary(str(args.transferbench))
+    except ValueError as error:
+        raise RuntimeError(str(error)) from error
+    args.transferbench = binary
     environment = os.environ.copy()
     previous = environment.get("LD_LIBRARY_PATH")
-    environment["LD_LIBRARY_PATH"] = str(args.rocm_lib) + (
-        f":{previous}" if previous else ""
-    )
+    if args.rocm_lib is not None:
+        environment["LD_LIBRARY_PATH"] = str(args.rocm_lib) + (
+            f":{previous}" if previous else ""
+        )
     result = subprocess.run(
         [str(binary)], env=environment, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, check=False,
