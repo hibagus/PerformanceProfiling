@@ -1,16 +1,16 @@
 # Performance Profiling Utilities
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/Platforms-AMD%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Dell-blue)](#repository-layout)
+[![Platforms](https://img.shields.io/badge/Platforms-AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Dell-blue)](#repository-layout)
 [![Contributions welcome](https://img.shields.io/badge/Contributions-welcome-brightgreen.svg)](#contributing)
 
 A collection of lightweight scripts, parsers, and configuration files for
 collecting and processing performance telemetry from accelerator servers.
 
 The repository currently covers AMD GPU telemetry and interconnect bandwidth,
-AMD CPU memory and socket-interconnect counters, NVIDIA PCIe and NVLink
-throughput, Mellanox InfiniBand port throughput, and Dell iDRAC telemetry
-processing.
+Intel CPU, PCIe, IIO, and UPI counters, AMD CPU memory and socket-interconnect
+counters, NVIDIA PCIe and NVLink throughput, Mellanox InfiniBand port
+throughput, and Dell iDRAC telemetry processing.
 
 ## Table of contents
 
@@ -54,6 +54,13 @@ PerformanceProfiling/
 │   └── legacy/
 │       ├── AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/
 │       └── AMD_ROCM_SMI/
+├── Intel/
+│   └── pcm202604_sapphirerapids/
+│       ├── README.md
+│       ├── pcm_common.py
+│       ├── pcm_cpu_monitor.py
+│       ├── pcm_iio_monitor.py
+│       └── pcm_pcie_monitor.py
 ├── Dell/
 │   └── legacy/IDRAC_Fan_Speed/
 ├── Mellanox/
@@ -103,6 +110,17 @@ Important characteristics include:
 See the [MI300X monitoring guide](AMD/rocm10.0-Mi300X/README.md) for complete
 installation instructions, CLI examples, CSV schemas, units, validation
 results, and troubleshooting.
+
+### Intel PCM 202604 and Sapphire Rapids
+
+The actively documented Intel toolset is located in
+[`Intel/pcm202604_sapphirerapids`](Intel/pcm202604_sapphirerapids/README.md).
+
+| Tool | Purpose | Output |
+| --- | --- | --- |
+| `pcm_cpu_monitor.py` | Collects CPU, memory, cache, power, and supported UPI link metrics. | Native PCM CSV |
+| `pcm_pcie_monitor.py` | Collects aggregate PCIe transactions and estimated bandwidth per socket. | Native PCM CSV |
+| `pcm_iio_monitor.py` | Collects timestamped PCIe bandwidth per IIO stack, root port, and device. | Native PCM CSV |
 
 ## Legacy utilities
 
@@ -177,6 +195,9 @@ target environment.
 | --- | --- |
 | MI300X power, temperature, clocks, utilization, VRAM, or PCIe bandwidth | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) |
 | MI300X GPU-to-GPU xGMI bandwidth and utilization | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) |
+| Intel CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#upi-utilization) |
+| CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#pcm-iio) |
+| Aggregate Intel PCIe traffic by CPU socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#pcm-pcie) |
 | AMD EPYC Milan PCIe, DRAM, or intersocket xGMI counters | [`0x19_0x01.conf`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/0x19_0x01.conf) |
 | NVIDIA PCIe throughput | `NVIDIA/legacy/NVIDIA_PCIe_Throughput_Counter/` |
 | NVIDIA NVLink throughput | `NVIDIA/legacy/NVLink_Throughput_Counter/` |
