@@ -114,6 +114,15 @@ def printable_command(command: list[str]) -> str:
     return shlex.join(command)
 
 
+def normalize_csv_header(header: str) -> str:
+    """Make the unit of AMD-SMI's raw PCIe bandwidth field explicit."""
+
+    columns = header.split(",")
+    return ",".join(
+        "pcie_bw_mbps" if column == "pcie_bw" else column for column in columns
+    )
+
+
 def main() -> int:
     project_root = Path(__file__).resolve().parents[2]
     parser = build_parser(project_root)
@@ -183,21 +192,22 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    header: str | None = None
+    raw_header: str | None = None
     try:
         assert process.stdout is not None
         for raw_line in process.stdout:
             line = raw_line.rstrip("\r\n")
             if not line or line == "'CTRL' + 'C' to stop watching output:":
                 continue
-            if header is None:
-                header = line
+            if raw_header is None:
+                raw_header = line
+                output_header = normalize_csv_header(raw_header)
                 for handle, already_has_header in outputs:
                     if not already_has_header:
-                        handle.write(f"{header}\n")
+                        handle.write(f"{output_header}\n")
                         handle.flush()
                 continue
-            if line == header:
+            if line == raw_header:
                 continue
             for handle, _already_has_header in outputs:
                 handle.write(f"{line}\n")
