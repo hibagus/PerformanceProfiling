@@ -94,7 +94,8 @@ Important characteristics include:
 - Finite-duration or continuous monitoring
 - CSV output to a file, standard output, or both
 - Safe overwrite and append behavior
-- Explicit PCIe bandwidth units in the `pcie_bw_mbps` column
+- Explicit PCIe directionality and units in the
+  `pcie_bw_bidirectional_mbps` column (transmit + receive)
 - Actual elapsed-time accounting for calculated xGMI rates
 - Detection of xGMI counter resets or wraps
 - Configurable xGMI link capacity, timeout, and error threshold

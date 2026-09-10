@@ -195,14 +195,16 @@ base output contains:
 | `vram_free` | Free VRAM | AMD-SMI-labeled MB |
 | `vram_total` | Total VRAM | AMD-SMI-labeled MB |
 | `vram_percent` | Used VRAM | % |
-| `pcie_bw_mbps` | Instantaneous aggregate PCIe bandwidth | Mb/s |
+| `pcie_bw_bidirectional_mbps` | Instantaneous aggregate PCIe bandwidth (transmit + receive) | Mb/s |
 
 `--ecc` adds `single_bit_ecc`, `double_bit_ecc`, and `pcie_replay`.
 `--violation` adds the violation fields supplied by the installed AMD-SMI
 version.
 
 The script renames AMD-SMI's ambiguous `pcie_bw` CSV header to
-`pcie_bw_mbps`. It does not modify the numeric value.
+`pcie_bw_bidirectional_mbps`. This is one combined value for traffic in both
+directions, not separate transmit and receive measurements. The script does
+not modify the numeric value.
 
 ## xGMI bandwidth monitor
 
@@ -358,11 +360,11 @@ the result `MB`; numerically, those VRAM fields are MiB even though their
 upstream label says MB.
 
 PCIe bandwidth is reported by AMD-SMI in megabits per second. Convert a
-`pcie_bw_mbps` value as follows:
+`pcie_bw_bidirectional_mbps` value as follows:
 
 ```python
-mb_per_second = pcie_bw_mbps / 8
-gb_per_second = pcie_bw_mbps / 8_000
+mb_per_second = pcie_bw_bidirectional_mbps / 8
+gb_per_second = pcie_bw_bidirectional_mbps / 8_000
 ```
 
 For example:
@@ -371,12 +373,12 @@ For example:
 524,000 Mb/s = 65,500 MB/s = 65.5 GB/s
 ```
 
-Do not divide `pcie_bw_mbps` by 1,024 when converting between SI bandwidth
+Do not divide `pcie_bw_bidirectional_mbps` by 1,024 when converting between SI bandwidth
 units. If binary byte units are specifically required:
 
 ```python
-mib_per_second = pcie_bw_mbps * 1_000_000 / 8 / (1024**2)
-gib_per_second = pcie_bw_mbps * 1_000_000 / 8 / (1024**3)
+mib_per_second = pcie_bw_bidirectional_mbps * 1_000_000 / 8 / (1024**2)
+gib_per_second = pcie_bw_bidirectional_mbps * 1_000_000 / 8 / (1024**3)
 ```
 
 ## Validation
@@ -458,8 +460,9 @@ takes longer than the requested interval, the next query starts immediately.
 
 - The code is tied to the AMD-SMI CLI output available in the tested ROCm 10.0
   environment. Future output-schema changes may require parser updates.
-- `pcie_bw_mbps` is an instantaneous aggregate link metric. It does not expose
-  separate transmit and receive values on the tested platform.
+- `pcie_bw_bidirectional_mbps` is an instantaneous aggregate link metric that
+  combines transmit and receive traffic. It does not expose the two directions
+  separately on the tested platform.
 - AMD-SMI PCIe and xGMI values measure link-accounted traffic, not application
   payload throughput.
 - xGMI source selection does not reduce AMD-SMI query cost because the complete

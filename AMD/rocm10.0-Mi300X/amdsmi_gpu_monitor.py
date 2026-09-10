@@ -1,5 +1,5 @@
 # (C) 2026 Bagus Hanindhito, Dell Technologies Inc.
-# This Python script is used to collect and monitor GPU Temperature, Power, Clock Frequency, Memory Utilization, and PCIe Bandwidth Utilization of AMD Mi300X GPUs. 
+# This Python script is used to collect and monitor GPU Temperature, Power, Clock Frequency, Memory Utilization, and aggregate bidirectional PCIe Bandwidth Utilization of AMD Mi300X GPUs.
 # It is a telemetry collection script that utilizes the AMD-SMI command-line tool to gather GPU metrics and write them to a CSV file for further analysis.
  
 # The basic command is `amd-smi dmon`.
@@ -33,7 +33,7 @@ from amdsmi_common import open_text_file, parse_gpu_ids, positive_int, resolve_o
 def build_parser(project_root: Path) -> argparse.ArgumentParser:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     parser = argparse.ArgumentParser(
-        description="This script is used to collect and monitor Temperature, Power, Clock Frequency, Memory Utilization, and PCIe Bandwidth Utilization of AMD Mi300X GPUs.\n(C) 2026 Bagus Hanindhito, Dell Technologies Inc.",
+        description="This script is used to collect and monitor Temperature, Power, Clock Frequency, Memory Utilization, and aggregate bidirectional PCIe Bandwidth Utilization of AMD Mi300X GPUs.\n(C) 2026 Bagus Hanindhito, Dell Technologies Inc.",
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument(
@@ -115,11 +115,12 @@ def printable_command(command: list[str]) -> str:
 
 
 def normalize_csv_header(header: str) -> str:
-    """Make the unit of AMD-SMI's raw PCIe bandwidth field explicit."""
+    """Make the directionality and unit of AMD-SMI's PCIe field explicit."""
 
     columns = header.split(",")
     return ",".join(
-        "pcie_bw_mbps" if column == "pcie_bw" else column for column in columns
+        "pcie_bw_bidirectional_mbps" if column == "pcie_bw" else column
+        for column in columns
     )
 
 
