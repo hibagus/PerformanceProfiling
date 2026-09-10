@@ -16,6 +16,7 @@ The tools have no third-party Python package dependencies.
 - [Tested environment](#tested-environment)
 - [Requirements](#requirements)
 - [Getting started](#getting-started)
+- [Combined GPU and xGMI monitor](#combined-gpu-and-xgmi-monitor)
 - [GPU telemetry monitor](#gpu-telemetry-monitor)
 - [xGMI bandwidth monitor](#xgmi-bandwidth-monitor)
 - [Output handling](#output-handling)
@@ -29,10 +30,11 @@ The tools have no third-party Python package dependencies.
 
 ## Overview
 
-The directory contains three Python modules:
+The directory contains four Python modules:
 
 ```text
 rocm10.0-Mi300X/
+├── amdsmi_combined_monitor.py
 ├── amdsmi_common.py
 ├── amdsmi_gpu_monitor.py
 ├── amdsmi_xgmi_bw_monitor.py
@@ -41,6 +43,7 @@ rocm10.0-Mi300X/
 
 | File | Purpose |
 | --- | --- |
+| `amdsmi_combined_monitor.py` | Runs both monitors concurrently and merges their timestamped output. |
 | `amdsmi_gpu_monitor.py` | Collects temperature, power, clocks, utilization, VRAM usage, and instantaneous PCIe bandwidth. |
 | `amdsmi_xgmi_bw_monitor.py` | Samples cumulative xGMI counters and calculates per-peer bandwidth and utilization. |
 | `amdsmi_common.py` | Contains shared argument, GPU-selection, and safe output-file helpers. It is not intended to be run directly. |
@@ -98,6 +101,7 @@ Display the available options:
 ```bash
 python3 amdsmi_gpu_monitor.py --help
 python3 amdsmi_xgmi_bw_monitor.py --help
+python3 amdsmi_combined_monitor.py --help
 ```
 
 Run short smoke tests:
@@ -109,6 +113,56 @@ python3 amdsmi_xgmi_bw_monitor.py -g 0 -w 1 -W 5 --stdout
 
 Diagnostic messages are written to standard error, so standard output remains
 valid CSV when `--stdout` is selected.
+
+## Combined GPU and xGMI monitor
+
+`amdsmi_combined_monitor.py` launches both standalone monitors concurrently
+with the same GPU selection, interval, duration, and UTC run ID. When collection
+ends, it merges the nearest xGMI sample for each source GPU into every GPU
+telemetry row.
+
+Monitor all GPUs for 60 seconds and create all outputs in the current directory:
+
+```bash
+python3 amdsmi_combined_monitor.py -w 1 -W 60
+```
+
+Select GPUs and an output directory:
+
+```bash
+python3 amdsmi_combined_monitor.py \
+  -g 0 1 \
+  -w 1 \
+  -W 60 \
+  --output-dir runs/combined
+```
+
+One invocation creates three files with a shared run ID:
+
+```text
+20260910T161023Z_amdsmi_monitor.csv
+20260910T161023Z_amdsmi_xgmi_bandwidth.csv
+20260910T161023Z_amdsmi_consolidated.csv
+```
+
+Use `--run-id`, `--gpu-output`, `--xgmi-output`, or `--output` to override
+these names. Existing files are protected unless `--overwrite` is supplied.
+`--dry-run` prints both child commands and all output paths without collecting.
+
+The two AMD-SMI commands timestamp their observations independently, so their
+sample timestamps cannot be made exactly identical. The combined monitor
+preserves both raw files and performs a nearest-timestamp join for the same
+source GPU. The default maximum timestamp difference is half the requested
+interval; it can be changed with `--match-tolerance`.
+
+The consolidated file retains every GPU-monitor column and appends fields named
+`xgmi_to_gpu_N_bidirectional_utilization_pct`. On an eight-GPU MI300X system,
+each GPU row has values for its seven peers and a blank self-link column. A row
+is left blank in all appended fields when there is no xGMI sample within the
+tolerance. This is normally expected for the initial GPU row because the first
+xGMI query establishes the counter baseline.
+
+Pressing Ctrl+C stops both collectors cleanly and merges the partial raw files.
 
 ## GPU telemetry monitor
 
@@ -308,7 +362,7 @@ On the tested MI300X system, AMD-SMI reports a maximum xGMI bandwidth of
 
 ## Output handling
 
-Both monitors support the same output modes:
+Both standalone monitors support the same output modes:
 
 | Option | Behavior |
 | --- | --- |
