@@ -234,9 +234,11 @@ def query_xgmi(gpu_ids: list[int], timeout: float) -> Sample:
     )
 
 
-def format_number(value: float, decimal_places: int = 6) -> str:
+def format_number(value: int | float, decimal_places: int = 6) -> str:
     """Keep integral counters readable while formatting calculated rates."""
 
+    if isinstance(value, int):
+        return str(value)
     if value.is_integer():
         return str(int(value))
     return f"{value:.{decimal_places}f}"
