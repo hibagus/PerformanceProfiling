@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&logoColor=black)](#prerequisites)
 
 Dependency-free Python wrappers for collecting native Intel® Performance
-Counter Monitor CSV data, plus repeatable TransferBench validation workflows.
+Counter Monitor CSV data, plus optional TransferBench validation workflows.
 
 [Getting started](#getting-started) · [Usage](#usage) · [Choosing a monitor](#choosing-a-monitor) · [Validation](#validation-results)
 
@@ -45,8 +45,8 @@ kernel, access mode, and PCM release.
 | `pcm_cpu_monitor.py` | `pcm` | CPU, cache, memory, power, and per-link UPI telemetry |
 | `pcm_pcie_monitor.py` | `pcm-pcie` | Approximate socket-level PCIe transaction activity |
 | `pcm_iio_monitor.py` | `pcm-iio` | Per-socket, IIO-stack, root-port, and device PCIe bandwidth |
-| `validate_pcm_transferbench.py` | Multiple | Focused PCIe, IIO, and UPI validation cases |
-| `validate_pcm_cpu_gpu_matrix.py` | Multiple | Full CPU-NUMA × GPU × direction validation matrix |
+| `validate_pcm_transferbench.py` | Multiple | Optional focused PCIe, IIO, and UPI validation cases |
+| `validate_pcm_cpu_gpu_matrix.py` | Multiple | Optional full CPU-NUMA × GPU × direction validation matrix |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -54,21 +54,27 @@ kernel, access mode, and PCM release.
 
 ### Prerequisites
 
+Required for the monitoring scripts:
+
 - Linux on a supported Intel server platform; validation was performed on
   Sapphire Rapids.
 - Python 3.10 or newer. The wrappers use only the standard library.
 - Intel PCM 202604 with `pcm`, `pcm-pcie`, and `pcm-iio` compiled or installed.
 - Permission to use the required core and uncore performance counters.
-- TransferBench and its GPU runtime dependencies for validation workflows.
+
+TransferBench is **not required** to run `pcm_cpu_monitor.py`,
+`pcm_pcie_monitor.py`, or `pcm_iio_monitor.py`. It and its GPU runtime
+dependencies are optional and used only by the two validation scripts.
 
 ### Binary discovery
 
 PCM binaries are resolved from `PCM_BIN`, `PCM_PCIE_BIN`, or `PCM_IIO_BIN`, then
 from `PATH`. Use `--binary` to override either source.
 
-The validators resolve TransferBench from `TRANSFERBENCH_BIN`, then `PATH`, or
-from `--transferbench`. If GPU runtime libraries are not already discoverable,
-set `ROCM_LIB_DIR` or pass `--rocm-lib`.
+If you choose to run validation, the validators resolve TransferBench from
+`TRANSFERBENCH_BIN`, then `PATH`, or from `--transferbench`. If its GPU runtime
+libraries are not already discoverable, set `ROCM_LIB_DIR` or pass
+`--rocm-lib`.
 
 Confirm that the required commands are available:
 
@@ -76,6 +82,11 @@ Confirm that the required commands are available:
 pcm --version
 pcm-pcie --version
 pcm-iio --version
+```
+
+TransferBench only needs to be checked before an optional validation run:
+
+```bash
 TransferBench
 ```
 
@@ -134,6 +145,9 @@ python3 pcm_cpu_monitor.py --duration 10 --pcm-arg=-m=1
 ```
 
 ### Controlled validation
+
+This section is optional. The three monitoring scripts operate independently
+and do not invoke or depend on TransferBench.
 
 The focused validator runs six sequential cases: H2D and D2H under `pcm-pcie`,
 H2D and D2H under `pcm-iio`, and local and cross-socket CPU copies under `pcm`.
