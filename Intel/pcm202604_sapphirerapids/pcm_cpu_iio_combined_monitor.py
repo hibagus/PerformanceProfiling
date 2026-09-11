@@ -147,6 +147,12 @@ def child_commands(
     """Build child commands with one interval and a coordinated overlap window."""
 
     timing = ["--interval", str(args.interval)]
+    # Make the privileged collector self-terminating.  Signalling the outer
+    # sudo process is not sufficient on every sudo configuration, and can
+    # otherwise leave pcm-iio collecting after this wrapper has exited.
+    iio_timing = [*timing]
+    if args.duration is not None:
+        iio_timing.extend(("--duration", str(args.duration)))
     common = ["--output-mode", "file"]
     if args.direct_msr:
         common.append("--direct-msr")
@@ -179,7 +185,7 @@ def child_commands(
     iio_command = [
         sys.executable,
         str(SCRIPT_DIR / "pcm_iio_monitor.py"),
-        *timing,
+        *iio_timing,
         *common,
         "--binary",
         args.iio_binary,
@@ -327,23 +333,19 @@ def run_children(
                 time.sleep(0.1)
 
         if received_signal is None and len(processes) == 2:
-            overlap_deadline = (
-                time.monotonic() + duration if duration is not None else None
-            )
+            # A duration-limited pcm-iio child stops itself after the requested
+            # number of samples.  It is the overlap clock because it starts
+            # only after the CPU collector has produced a valid sample.
             while cpu_process.poll() is None and iio_process.poll() is None:
                 if received_signal is not None:
-                    break
-                if (
-                    overlap_deadline is not None
-                    and time.monotonic() >= overlap_deadline
-                ):
-                    duration_elapsed = True
-                    stop_processes(processes)
                     break
                 time.sleep(0.1)
 
             if received_signal is None:
                 if iio_process.poll() is not None and cpu_process.poll() is None:
+                    duration_elapsed = (
+                        duration is not None and iio_process.returncode == 0
+                    )
                     stop_processes([cpu_process])
                 elif cpu_process.poll() is not None and iio_process.poll() is None:
                     stop_processes([iio_process])

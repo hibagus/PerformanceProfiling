@@ -337,6 +337,10 @@ def run_monitor(
             stderr=subprocess.PIPE if capture_diagnostics else error_stream,
             text=capture_diagnostics or capture_stdout,
             start_new_session=not elevated,
+            # Keep sudo and its privileged child in a group that belongs only
+            # to this collector while preserving access to the controlling
+            # terminal for an initial password prompt.
+            preexec_fn=os.setpgrp if elevated else None,
         )
 
         stdout_thread: threading.Thread | None = None
@@ -409,12 +413,35 @@ def run_monitor(
             nonlocal received_signal
             received_signal = signum
             try:
-                if elevated:
-                    process.send_signal(signum)
-                else:
-                    os.killpg(process.pid, signum)
+                os.killpg(process.pid, signum)
             except ProcessLookupError:
                 pass
+            except PermissionError:
+                process.send_signal(signum)
+            if elevated:
+                # The caller cannot directly signal the root-owned pcm-iio
+                # member of the group.  Ask cached, non-interactive sudo to
+                # signal the complete group so no collector is orphaned.
+                signal_name = signal.Signals(signum).name.removeprefix("SIG")
+                kill = shutil.which("kill") or "/bin/kill"
+                try:
+                    subprocess.Popen(
+                        [
+                            sudo,
+                            "-n",
+                            "--",
+                            kill,
+                            f"-{signal_name}",
+                            "--",
+                            f"-{process.pid}",
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                except OSError:
+                    pass
 
         previous_handlers = {
             signum: signal.signal(signum, forward_signal)
