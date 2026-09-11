@@ -190,7 +190,9 @@ initialization time is excluded from the overlapping collection window. Both
 raw native CSV files are preserved.
 At the end, the script pivots every IIO identity into four columns—`IB write`,
 `IB read`, `OB read`, and `OB write`—and appends the nearest IIO sample to each
-native PCM CPU row.
+native PCM CPU row. It also sums Part0 through Part7 for every socket/IIO stack
+and bandwidth direction, so both per-root-port detail and stack totals are
+available in the same row.
 
 The combined monitor omits per-core CPU metrics by default. System- and
 socket-level CPU, memory, and UPI metrics remain enabled. This keeps the native
@@ -213,6 +215,26 @@ The consolidated CSV retains PCM's two-row CPU header. Added columns are under
 the `PCM IIO` category and are named with socket, stack/device, part, root-port
 BDF, metric, and unit. Two metadata columns record the matched IIO timestamp
 and signed time delta, making every alignment auditable.
+
+On Sapphire Rapids, `Part0` through `Part7` are the eight channel selections
+inside one IIO PMON stack, not CPU cores or eight pieces of one measurement.
+PCM programs channel masks `0x01` through `0x80`; for a PCIe stack, PCM maps
+Part0 through Part7 to enabled root-port device numbers 1 through 8 on that
+stack's root bus. A part with `no_root_port` has no enabled/discovered root port
+in PCM's topology, although its filtered counter is still emitted. IDX and DMI
+stacks use the same part IDs for their internal accelerator or DMI channel
+mapping, so their topology is not necessarily the PCIe device-number mapping.
+
+Stack aggregate columns omit the root-port component and use this form:
+
+```text
+pcm_iio__Socket0__IIO_Stack_2_PCIe0__Part0_to_Part7_total__IB_read_bytes_per_second
+```
+
+The aggregate is the exact numeric sum of all available Part0-Part7 values for
+that socket, stack, timestamp, and direction. It represents all traffic on the
+IIO stack; use the individual part/root-port column when attributing traffic to
+one GPU or PCIe port.
 
 The default match tolerance is half the sampling interval. Override it when
 the two native samplers have a larger stable phase difference:
@@ -255,14 +277,16 @@ Useful variations:
 ```bash
 python3 validate_pcm_transferbench.py --dry-run
 python3 validate_pcm_transferbench.py --cases pcie_h2d iio_h2d upi_cross
+python3 validate_pcm_transferbench.py --cases combined_h2d combined_d2h
 python3 validate_pcm_transferbench.py --cpu-node 1 --gpu 4
 ```
 
 ### Full CPU-to-GPU matrix
 
 The matrix validator tests H2D and D2H between CPU NUMA nodes 0 and 1 and GPUs
-0 through 7. Each of the 32 paths is repeated under `pcm-iio` for PCIe and
-under `pcm` for UPI, producing 64 isolated captures.
+0 through 7. By default, each of the 32 directional paths is measured once by
+the combined monitor, producing timestamp-aligned CPU/UPI and IIO data while
+the same TransferBench workload is active.
 
 ```bash
 python3 validate_pcm_cpu_gpu_matrix.py
@@ -273,7 +297,11 @@ Preview the matrix or run a shorter subset with:
 ```bash
 python3 validate_pcm_cpu_gpu_matrix.py --dry-run
 python3 validate_pcm_cpu_gpu_matrix.py --duration 3 --gpus 0 4
+python3 validate_pcm_cpu_gpu_matrix.py --monitor-mode isolated
 ```
+
+`--monitor-mode isolated` retains the previous behavior: four sequential
+captures per CPU/GPU pair (`iio_h2d`, `iio_d2h`, `upi_h2d`, and `upi_d2h`).
 
 Results are organized beneath `runs/` with manifests, TransferBench topology,
 benchmark logs, native PCM CSVs, and diagnostic logs.

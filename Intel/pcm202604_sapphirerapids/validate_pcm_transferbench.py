@@ -25,6 +25,8 @@ DEFAULT_ROCM_LIB = (
     Path(value) if (value := os.environ.get("ROCM_LIB_DIR")) else None
 )
 ALL_CASES = (
+    "combined_h2d",
+    "combined_d2h",
     "pcie_h2d",
     "pcie_d2h",
     "iio_h2d",
@@ -165,7 +167,11 @@ def case_spec(args: argparse.Namespace, case: str) -> tuple[str, list[str], str]
             f"(C{cpu}->C{cpu}->C{args.remote_cpu_node})"
         )
 
-    if case.startswith("pcie_"):
+    if case.startswith("combined_"):
+        script = SCRIPT_DIR / "pcm_cpu_iio_combined_monitor.py"
+        csv_name = "pcm_cpu_iio_consolidated.csv"
+        extras = []
+    elif case.startswith("pcie_"):
         script = SCRIPT_DIR / "pcm_pcie_monitor.py"
         csv_name = "pcm_pcie.csv"
         extras: list[str] = []
@@ -178,6 +184,55 @@ def case_spec(args: argparse.Namespace, case: str) -> tuple[str, list[str], str]
         csv_name = "pcm_cpu.csv"
         extras = ["--no-cores"]
     return expression, [sys.executable, str(script), *extras], csv_name
+
+
+def case_needs_iio(case: str) -> bool:
+    """Return whether a validation case starts pcm-iio."""
+
+    return case.startswith(("iio_", "combined_"))
+
+
+def build_monitor_command(
+    args: argparse.Namespace,
+    case: str,
+    case_dir: Path,
+    monitor_base: list[str],
+    csv_name: str,
+    monitor_duration: float,
+) -> tuple[list[str], Path, Path, dict[str, str]]:
+    """Build a monitor command and identify its readiness artifacts."""
+
+    csv_path = case_dir / csv_name
+    if case.startswith("combined_"):
+        cpu_path = case_dir / "pcm_cpu.csv"
+        iio_path = case_dir / "pcm_iio.csv"
+        cpu_stderr = case_dir / "pcm_cpu_stderr.log"
+        iio_stderr = case_dir / "pcm_iio_stderr.log"
+        command = [
+            *monitor_base,
+            "--interval", str(args.interval),
+            "--duration", str(monitor_duration),
+            "--cpu-output", str(cpu_path),
+            "--iio-output", str(iio_path),
+            "--output", str(csv_path),
+        ]
+        artifacts = {
+            "raw_cpu_csv": str(cpu_path),
+            "raw_iio_csv": str(iio_path),
+            "cpu_stderr_log": str(cpu_stderr),
+            "iio_stderr_log": str(iio_stderr),
+        }
+        return command, iio_path, iio_stderr, artifacts
+
+    pcm_stderr = case_dir / f"{Path(csv_name).stem}_stderr.log"
+    command = [
+        *monitor_base,
+        "--interval", str(args.interval),
+        "--duration", str(monitor_duration),
+        "--output", str(csv_path),
+        "--stderr-log", str(pcm_stderr),
+    ]
+    return command, csv_path, pcm_stderr, {"pcm_stderr_log": str(pcm_stderr)}
 
 
 def print_command(environment: dict[str, str], command: list[str]) -> None:
@@ -295,7 +350,6 @@ def run_case(
     case_dir = run_dir / case
     case_dir.mkdir()
     csv_path = case_dir / csv_name
-    pcm_stderr = case_dir / f"{Path(csv_name).stem}_stderr.log"
     wrapper_log = case_dir / "monitor_wrapper.log"
     benchmark_log = case_dir / "transferbench.log"
     # Let PCM stop itself. A synthetic SIGINT from this unprivileged runner
@@ -306,17 +360,11 @@ def run_case(
         + args.tail_seconds
         + 2 * args.interval
     )
-    monitor_command = [
-        *monitor_base,
-        "--interval",
-        str(args.interval),
-        "--duration",
-        str(monitor_duration),
-        "--output",
-        str(csv_path),
-        "--stderr-log",
-        str(pcm_stderr),
-    ]
+    monitor_command, readiness_csv, diagnostics_path, monitor_artifacts = (
+        build_monitor_command(
+            args, case, case_dir, monitor_base, csv_name, monitor_duration
+        )
+    )
     benchmark_command = [
         str(args.transferbench.expanduser()),
         "cmdline",
@@ -335,7 +383,9 @@ def run_case(
                 stdout=monitor_output,
                 stderr=subprocess.STDOUT,
             )
-            wait_for_monitor(monitor, csv_path, pcm_stderr, args.startup_timeout)
+            wait_for_monitor(
+                monitor, readiness_csv, diagnostics_path, args.startup_timeout
+            )
             time.sleep(args.lead_seconds)
             benchmark = subprocess.run(
                 benchmark_command,
@@ -372,9 +422,9 @@ def run_case(
         "transferbench_reported_error": failed_text,
         "transferbench_gbps": rates,
         "measurement_csv": str(csv_path),
-        "pcm_stderr_log": str(pcm_stderr),
         "monitor_wrapper_log": str(wrapper_log),
         "transferbench_log": str(benchmark_log),
+        **monitor_artifacts,
     }
     if benchmark.returncode != 0 or failed_text:
         raise RuntimeError(
@@ -404,27 +454,20 @@ def main() -> int:
         print(f"result directory: {run_dir}")
         iio_authenticated = False
         for case in args.cases:
-            if case.startswith("iio_") and not iio_authenticated:
+            if case_needs_iio(case) and not iio_authenticated:
                 print("  sudo -v")
                 iio_authenticated = True
             expression, monitor_base, csv_name = case_spec(args, case)
             case_dir = run_dir / case
-            monitor = [
-                *monitor_base,
-                "--interval",
-                str(args.interval),
-                "--duration",
-                str(
-                    args.lead_seconds
-                    + args.duration
-                    + args.tail_seconds
-                    + 2 * args.interval
-                ),
-                "--output",
-                str(case_dir / csv_name),
-                "--stderr-log",
-                str(case_dir / f"{Path(csv_name).stem}_stderr.log"),
-            ]
+            monitor_duration = (
+                args.lead_seconds
+                + args.duration
+                + args.tail_seconds
+                + 2 * args.interval
+            )
+            monitor, _readiness, _diagnostics, _artifacts = build_monitor_command(
+                args, case, case_dir, monitor_base, csv_name, monitor_duration
+            )
             print(f"[{case}] {expression}")
             print_command({}, monitor)
             print_command(
@@ -452,7 +495,7 @@ def main() -> int:
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         iio_authenticated = False
         for case in args.cases:
-            if case.startswith("iio_") and not iio_authenticated:
+            if case_needs_iio(case) and not iio_authenticated:
                 authenticate_iio_sudo()
                 iio_authenticated = True
             result = run_case(args, case, run_dir, environment)

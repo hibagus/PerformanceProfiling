@@ -1,5 +1,5 @@
 # (C) 2026 Bagus Hanindhito, Dell Technologies Inc.
-"""Run the complete CPU-NUMA/GPU transfer matrix under PCM IIO and UPI."""
+"""Run the complete CPU-NUMA/GPU transfer matrix under PCM CPU and IIO."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Test H2D and D2H between CPU NUMA nodes 0/1 and GPUs 0-7, "
-            "collecting isolated pcm-iio PCIe and pcm UPI captures."
+            "collecting synchronized PCM CPU/UPI and IIO captures."
         )
     )
     parser.add_argument("--transferbench", type=Path, default=DEFAULT_TRANSFERBENCH)
@@ -39,6 +39,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lead-seconds", type=positive_float, default=2.0)
     parser.add_argument("--tail-seconds", type=positive_float, default=2.0)
     parser.add_argument("--startup-timeout", type=positive_float, default=30.0)
+    parser.add_argument(
+        "--monitor-mode",
+        choices=("combined", "isolated"),
+        default="combined",
+        help=(
+            "combined runs CPU/UPI and IIO together once per direction; isolated "
+            "retains the legacy separate IIO and CPU captures (default: combined)"
+        ),
+    )
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     return parser
@@ -60,6 +69,11 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
 def child_command(
     args: argparse.Namespace, cpu: int, gpu: int, output_dir: Path
 ) -> list[str]:
+    cases = (
+        ("combined_h2d", "combined_d2h")
+        if args.monitor_mode == "combined"
+        else ("iio_h2d", "iio_d2h", "upi_h2d", "upi_d2h")
+    )
     command = [
         sys.executable,
         str(SCRIPT_DIR / "validate_pcm_transferbench.py"),
@@ -72,7 +86,7 @@ def child_command(
         "--lead-seconds", str(args.lead_seconds),
         "--tail-seconds", str(args.tail_seconds),
         "--startup-timeout", str(args.startup_timeout),
-        "--cases", "iio_h2d", "iio_d2h", "upi_h2d", "upi_d2h",
+        "--cases", *cases,
         "--output-dir", str(output_dir),
     ]
     if args.rocm_lib is not None:
@@ -117,7 +131,11 @@ def main() -> int:
 
     if args.dry_run:
         print(f"result directory: {run_dir}")
-        print(f"{len(pairs)} CPU/GPU pairs, 4 isolated captures per pair")
+        captures = 2 if args.monitor_mode == "combined" else 4
+        print(
+            f"{len(pairs)} CPU/GPU pairs, {captures} {args.monitor_mode} "
+            "captures per pair"
+        )
         for cpu, gpu in pairs:
             print(shlex.join(child_command(args, cpu, gpu, run_dir / f"cpu{cpu}_gpu{gpu}")))
         return 0
@@ -136,6 +154,7 @@ def main() -> int:
             "gpus": args.gpus,
             "size": args.size,
             "duration_seconds": args.duration,
+            "monitor_mode": args.monitor_mode,
             "runs": [],
         }
         manifest_path = run_dir / "manifest.json"

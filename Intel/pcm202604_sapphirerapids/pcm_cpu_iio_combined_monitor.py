@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from collections import OrderedDict
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TextIO
@@ -372,6 +373,15 @@ def slug(value: str, fallback: str) -> str:
     return result or fallback
 
 
+def decimal_text(value: Decimal) -> str:
+    """Render a summed counter without introducing binary floating-point noise."""
+
+    rendered = format(value, "f")
+    if "." in rendered:
+        rendered = rendered.rstrip("0").rstrip(".")
+    return rendered or "0"
+
+
 def read_iio_samples(
     path: Path,
 ) -> tuple[list[datetime], list[dict[str, str]], list[str]]:
@@ -448,6 +458,60 @@ def read_iio_samples(
 
     if not grouped:
         raise ValueError("IIO CSV contains no samples")
+
+    # PCM models each IIO stack as eight selectable PMON channel masks named
+    # Part0 through Part7. Preserve every per-part value above, and add one
+    # stack-level total for each bandwidth direction below. Root Port is not
+    # part of the aggregate identity because different parts can map to
+    # different root ports within the same IIO stack.
+    stack_sources: OrderedDict[
+        tuple[str, str], dict[str, list[str]]
+    ] = OrderedDict()
+    for (socket, _root_port, name, part), mapping in identity_columns.items():
+        if re.fullmatch(r"Part[0-7]", part) is None:
+            continue
+        sources = stack_sources.setdefault(
+            (socket, name), {metric: [] for metric in IIO_BANDWIDTH_FIELDS}
+        )
+        for metric, column in mapping.items():
+            sources[metric].append(column)
+
+    for (socket, name), sources in stack_sources.items():
+        prefix = "pcm_iio__" + "__".join(
+            (
+                slug(socket, "unknown_socket"),
+                slug(name, "unknown_device"),
+                "Part0_to_Part7_total",
+            )
+        )
+        aggregate_columns = {
+            metric: f"{prefix}__{slug(metric, 'metric')}_bytes_per_second"
+            for metric in IIO_BANDWIDTH_FIELDS
+        }
+        if any(column in seen_columns for column in aggregate_columns.values()):
+            raise ValueError(
+                f"IIO aggregate column-name collision for {(socket, name)!r}"
+            )
+        for column in aggregate_columns.values():
+            seen_columns.add(column)
+            columns.append(column)
+
+        for sample in grouped.values():
+            for metric, aggregate_column in aggregate_columns.items():
+                total = Decimal(0)
+                found = False
+                for source_column in sources[metric]:
+                    raw_value = sample.get(source_column, "").strip()
+                    if not raw_value:
+                        continue
+                    try:
+                        total += Decimal(raw_value)
+                    except InvalidOperation:
+                        continue
+                    found = True
+                if found:
+                    sample[aggregate_column] = decimal_text(total)
+
     ordered = sorted(grouped.items())
     return (
         [timestamp for timestamp, _sample in ordered],
