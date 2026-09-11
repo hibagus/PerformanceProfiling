@@ -96,6 +96,7 @@ validation workflows.
 | AMD ROCm 10.0 / MI300X | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) | Temperature, power, clocks, utilization, VRAM, and aggregate PCIe bandwidth |
 | AMD ROCm 10.0 / MI300X | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) | Per-peer xGMI bandwidth and utilization |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
+| Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_iio_combined_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#combined-cpu-and-iio-monitor) | Concurrent CPU/UPI and IIO telemetry in one timestamp-aligned CSV |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) | PCIe bandwidth by socket, IIO stack, root port, and device |
 | Intel PCM 202604 / Sapphire Rapids | [`validate_pcm_transferbench.py`](Intel/pcm202604_sapphirerapids/README.md#controlled-validation) | Focused PCIe, IIO, and UPI validation cases |

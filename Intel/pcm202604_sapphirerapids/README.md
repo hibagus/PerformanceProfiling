@@ -45,6 +45,7 @@ kernel, access mode, and PCM release.
 | `pcm_cpu_monitor.py` | `pcm` | CPU, cache, memory, power, and per-link UPI telemetry |
 | `pcm_pcie_monitor.py` | `pcm-pcie` | Approximate socket-level PCIe transaction activity |
 | `pcm_iio_monitor.py` | `pcm-iio` | Per-socket, IIO-stack, root-port, and device PCIe bandwidth |
+| `pcm_cpu_iio_combined_monitor.py` | `pcm` + `pcm-iio` | Concurrent CPU/UPI and IIO collection with a timestamp-aligned consolidated CSV |
 | `validate_pcm_transferbench.py` | Multiple | Optional focused PCIe, IIO, and UPI validation cases |
 | `validate_pcm_cpu_gpu_matrix.py` | Multiple | Optional full CPU-NUMA × GPU × direction validation matrix |
 
@@ -131,9 +132,27 @@ python3 pcm_pcie_monitor.py --duration 60
 python3 pcm_iio_monitor.py --duration 60
 ```
 
-All monitors default to a one-second interval. Without `--duration` or
-`--iterations`, collection continues until Ctrl+C. Each run creates a
-UTC-prefixed CSV and a sibling `_stderr.log` file.
+The standalone monitors default to a one-second interval. Without `--duration`
+or `--iterations`, collection continues until Ctrl+C. Each run creates a
+UTC-prefixed CSV and a sibling `_stderr.log` file by default.
+
+Select where the native CSV is written with the same options on all three
+standalone monitors:
+
+| Option | Result |
+| --- | --- |
+| `--output-mode file` | Write CSV to `--output`; this is the default |
+| `--output-mode stdout` or `--stdout` | Stream CSV to standard output only |
+| `--output-mode both` or `--both` | Stream CSV and write the same rows to `--output` |
+
+Diagnostics remain on standard error and in the sibling diagnostic log, so
+redirected standard output contains CSV only.
+
+```bash
+python3 pcm_cpu_monitor.py --duration 60 --stdout
+python3 pcm_pcie_monitor.py --duration 60 --both --output pcm_pcie.csv
+python3 pcm_iio_monitor.py --duration 60 --output-mode file
+```
 
 Choose output files explicitly when collecting beside a workload:
 
@@ -159,10 +178,70 @@ form when a native argument begins with a dash:
 python3 pcm_cpu_monitor.py --duration 10 --pcm-arg=-m=1
 ```
 
+### Combined CPU and IIO monitor
+
+`pcm_cpu_iio_combined_monitor.py` runs `pcm_cpu_monitor.py` and
+`pcm_iio_monitor.py` under one run ID and sampling interval. It initializes PCM
+CPU first and waits for a structurally valid sample before starting IIO. This
+ordering prevents IIO initialization from changing PCM's native CPU schema on
+platforms where the tools discover overlapping uncore resources. A finite
+`--duration` begins after both monitors have produced their first sample, so
+initialization time is excluded from the overlapping collection window. Both
+raw native CSV files are preserved.
+At the end, the script pivots every IIO identity into four columns—`IB write`,
+`IB read`, `OB read`, and `OB write`—and appends the nearest IIO sample to each
+native PCM CPU row.
+
+The combined monitor omits per-core CPU metrics by default. System- and
+socket-level CPU, memory, and UPI metrics remain enabled. This keeps the native
+PCM schema stable while `pcm-iio` is active and avoids per-core `resctrl`
+discovery races observed when both PCM processes initialize concurrently.
+
+```bash
+python3 pcm_cpu_iio_combined_monitor.py \
+  --interval 1 \
+  --duration 60 \
+  --output-dir runs/combined
+```
+
+Use `--with-cores` only when per-core columns are required. This mode is more
+platform-dependent and may produce an inconsistent native PCM header when run
+concurrently with `pcm-iio`; the merger detects and reports that condition
+instead of writing a misaligned consolidated CSV.
+
+The consolidated CSV retains PCM's two-row CPU header. Added columns are under
+the `PCM IIO` category and are named with socket, stack/device, part, root-port
+BDF, metric, and unit. Two metadata columns record the matched IIO timestamp
+and signed time delta, making every alignment auditable.
+
+The default match tolerance is half the sampling interval. Override it when
+the two native samplers have a larger stable phase difference:
+
+```bash
+python3 pcm_cpu_iio_combined_monitor.py \
+  --duration 60 \
+  --match-tolerance 0.75
+```
+
+Each monitor must produce its first valid sample within 30 seconds by default.
+Slow platforms can increase this per-monitor limit with `--startup-timeout`.
+
+The consolidated result also supports `--stdout`, `--both`, and
+`--output-mode`. In stdout-only mode the consolidated CSV is emitted after the
+run, while the two raw files are still retained. If IIO access requires sudo,
+the combined launcher authenticates before starting either monitor so the
+password prompt does not offset their launch times.
+
+The combined mode intentionally uses the core and IIO PMUs concurrently. The
+launcher keeps IIO active throughout the CPU sampling window and coordinates
+shutdown afterward. PCM utilities can still perform broad uncore cleanup when
+exiting, so use isolated passes when strict experiment reproducibility is more
+important than a single aligned file.
+
 ### Controlled validation
 
-This section is optional. The three monitoring scripts operate independently
-and do not invoke or depend on TransferBench.
+This section is optional. The monitoring scripts operate independently and do
+not invoke or depend on TransferBench.
 
 The focused validator runs six sequential cases: H2D and D2H under `pcm-pcie`,
 H2D and D2H under `pcm-iio`, and local and cross-socket CPU copies under `pcm`.
@@ -208,7 +287,8 @@ benchmark logs, native PCM CSVs, and diagnostic logs.
 | Per-GPU or per-root-port PCIe bandwidth | `pcm_iio_monitor.py` | Primary quantitative tool; H2D is normally `IB read`, D2H is normally `IB write` |
 | UPI bandwidth and link utilization | `pcm_cpu_monitor.py --no-cores` | `dataIn` is incoming payload; `trafficOut` includes data and protocol traffic |
 | Socket-level PCIe activity | `pcm_pcie_monitor.py` | Directional/debug cross-check, not the primary bandwidth value |
-| PCIe and UPI for one workload | Separate `pcm-iio` and `pcm` passes | Safest because each capture owns its PMU lifecycle |
+| Timestamp-aligned PCIe and UPI for one workload | `pcm_cpu_iio_combined_monitor.py` | Runs distinct core/IIO PMUs together and produces one wide CSV |
+| Strictly isolated PCIe and UPI validation | Separate `pcm-iio` and `pcm` passes | Each capture owns its PMU lifecycle |
 
 ### Why `pcm-iio` is preferred for GPU traffic
 
@@ -346,6 +426,7 @@ one-to-one. `Peak UPI in` is the largest incoming-link utilization.
 .
 ├── pcm_common.py
 ├── pcm_cpu_monitor.py
+├── pcm_cpu_iio_combined_monitor.py
 ├── pcm_iio_monitor.py
 ├── pcm_pcie_monitor.py
 ├── validate_pcm_transferbench.py
