@@ -100,6 +100,9 @@ def main() -> int:
         suppressed_diagnostics=(
             () if args.show_topology_warnings else KNOWN_TOPOLOGY_WARNINGS
         ),
+        csv_header_prefixes=(
+            () if args.list_topology else ("Date,Time,Socket,",)
+        ),
     )
 
 

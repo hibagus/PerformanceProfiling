@@ -41,7 +41,11 @@ def main() -> int:
         native_arguments.append("-B")
     if not args.no_llc_breakdown:
         native_arguments.append("-e")
-    return run_monitor(args, native_arguments)
+    return run_monitor(
+        args,
+        native_arguments,
+        csv_header_prefixes=("Skt,PCIRdCur,",),
+    )
 
 
 if __name__ == "__main__":

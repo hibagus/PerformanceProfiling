@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import math
 import os
 import shlex
@@ -101,7 +102,31 @@ def add_common_arguments(
         "--output",
         type=Path,
         default=Path(f"{utc_run_id()}_{output_name}.csv"),
-        help=f"measurement CSV path (default: UTC timestamp + _{output_name}.csv)",
+        help=(
+            "measurement CSV path for file/both modes "
+            f"(default: UTC timestamp + _{output_name}.csv)"
+        ),
+    )
+    parser.add_argument(
+        "--output-mode",
+        choices=("stdout", "file", "both"),
+        default="file",
+        help="where CSV rows are written (default: file)",
+    )
+    output_shortcut = parser.add_mutually_exclusive_group()
+    output_shortcut.add_argument(
+        "--stdout",
+        dest="output_mode",
+        action="store_const",
+        const="stdout",
+        help="shortcut for --output-mode stdout",
+    )
+    output_shortcut.add_argument(
+        "--both",
+        dest="output_mode",
+        action="store_const",
+        const="both",
+        help="shortcut for --output-mode both",
     )
     parser.add_argument(
         "--stderr-log",
@@ -159,14 +184,17 @@ def diagnostic_path(args: argparse.Namespace) -> Path:
     return args.output.with_name(f"{args.output.stem}_stderr.log")
 
 
-def prepare_paths(output: Path, diagnostics: Path, overwrite: bool) -> None:
-    if output.resolve() == diagnostics.resolve():
-        raise ValueError("--output and --stderr-log must be different paths")
-    for path in (output, diagnostics):
+def prepare_paths(
+    outputs: Sequence[Path], diagnostics: Path, overwrite: bool
+) -> None:
+    paths = [*outputs, diagnostics]
+    if len({path.resolve() for path in paths}) != len(paths):
+        raise ValueError("measurement and diagnostic paths must be different")
+    for path in paths:
         if path.exists() and not overwrite:
             raise ValueError(f"output already exists: {path} (use --overwrite)")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    diagnostics.parent.mkdir(parents=True, exist_ok=True)
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def build_command(
@@ -179,7 +207,10 @@ def build_command(
     if iterations is not None:
         command.append(f"-i={iterations}")
     command.extend(args.pcm_arg)
-    command.append(f"-csv={args.output.resolve()}")
+    if args.output_mode == "file":
+        command.append(f"-csv={args.output.resolve()}")
+    else:
+        command.extend(("-silent", "-csv"))
     return command
 
 
@@ -189,6 +220,7 @@ def run_monitor(
     *,
     use_sudo: bool = False,
     suppressed_diagnostics: Sequence[str] = (),
+    csv_header_prefixes: Sequence[str] = (),
 ) -> int:
     """Execute one PCM utility and preserve its native, version-specific CSV."""
 
@@ -196,6 +228,7 @@ def run_monitor(
         binary = resolve_binary(args.binary)
         diagnostics = diagnostic_path(args)
         command = build_command(binary, args, native_arguments)
+        writes_file = args.output_mode in {"file", "both"}
         environment_values = [
             f"PCM_NO_MSR={'1' if args.no_msr else '0'}",
             f"PCM_KEEP_NMI_WATCHDOG={'0' if args.disable_nmi_watchdog else '1'}",
@@ -215,9 +248,13 @@ def run_monitor(
                 print(shlex.join(printable_command))
             else:
                 print(" ".join(environment_values + [shlex.join(command)]))
+            if args.output_mode == "both":
+                print(f"CSV tee: stdout and {args.output.resolve()}")
             print(f"diagnostics: {diagnostics.resolve()}")
             return 0
-        prepare_paths(args.output, diagnostics, args.overwrite)
+        prepare_paths(
+            ([args.output] if writes_file else []), diagnostics, args.overwrite
+        )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -235,10 +272,13 @@ def run_monitor(
         if sudo is None:
             print("error: sudo is required but was not found on PATH", file=sys.stderr)
             return 2
-        print("pcm-iio needs privileged PCI topology access; invoking sudo.", file=sys.stderr)
+        print(
+            "pcm-iio needs privileged PCI topology access; invoking sudo.",
+            file=sys.stderr,
+        )
         # Pre-create a new artifact as the calling user. pcm-iio truncates the
         # existing inode, so sudo does not make ordinary outputs root-owned.
-        if not args.output.exists():
+        if writes_file and not args.output.exists():
             args.output.touch()
         command = [
             sudo,
@@ -256,9 +296,13 @@ def run_monitor(
         if iterations is not None
         else "continuously until Ctrl+C"
     )
+    destination = {
+        "file": str(args.output.resolve()),
+        "stdout": "stdout",
+        "both": f"stdout and {args.output.resolve()}",
+    }[args.output_mode]
     print(
-        f"collecting with {binary.name} to {args.output.resolve()} "
-        f"({limit_description})",
+        f"collecting with {binary.name} to {destination} ({limit_description})",
         file=sys.stderr,
     )
     if binary.name == "pcm-iio":
@@ -269,17 +313,63 @@ def run_monitor(
 
     # pcm-iio loads its opCode-<family>-<model>.txt beside the installed binary.
     # Using that directory is harmless for the other PCM utilities as well.
-    with diagnostics.open("w", encoding="utf-8") as error_stream:
+    with ExitStack() as stack:
+        error_stream = stack.enter_context(
+            diagnostics.open("w", encoding="utf-8")
+        )
+        output_stream = (
+            stack.enter_context(args.output.open("w", encoding="utf-8"))
+            if args.output_mode == "both"
+            else None
+        )
         capture_diagnostics = elevated or bool(suppressed_diagnostics)
+        capture_stdout = args.output_mode in {"stdout", "both"}
+        saw_csv_output = threading.Event()
         process = subprocess.Popen(
             command,
             cwd=binary.parent,
             env=environment,
-            stdout=subprocess.DEVNULL,
+            stdout=(
+                subprocess.PIPE
+                if capture_stdout
+                else subprocess.DEVNULL
+            ),
             stderr=subprocess.PIPE if capture_diagnostics else error_stream,
-            text=capture_diagnostics,
+            text=capture_diagnostics or capture_stdout,
             start_new_session=not elevated,
         )
+
+        stdout_thread: threading.Thread | None = None
+        if capture_stdout:
+            assert process.stdout is not None
+
+            def relay_stdout() -> None:
+                """Tee the native CSV stream to the terminal and output file."""
+
+                stdout_open = True
+                csv_started = not csv_header_prefixes
+                for line in process.stdout:
+                    if not csv_started:
+                        csv_started = any(
+                            line.startswith(prefix) for prefix in csv_header_prefixes
+                        )
+                        if not csv_started:
+                            sys.stderr.write(line)
+                            sys.stderr.flush()
+                            continue
+                    saw_csv_output.set()
+                    if output_stream is not None:
+                        output_stream.write(line)
+                        output_stream.flush()
+                    if stdout_open:
+                        try:
+                            sys.stdout.write(line)
+                            sys.stdout.flush()
+                        except BrokenPipeError:
+                            stdout_open = False
+
+            stdout_thread = threading.Thread(target=relay_stdout, daemon=True)
+            stdout_thread.start()
 
         relay_thread: threading.Thread | None = None
         if capture_diagnostics:
@@ -301,7 +391,8 @@ def run_monitor(
                 if suppressed_count:
                     summary = (
                         "[pcm wrapper] suppressed "
-                        f"{suppressed_count} known non-fatal topology warning line(s).\n"
+                        f"{suppressed_count} known non-fatal topology "
+                        "warning line(s).\n"
                     )
                     error_stream.write(summary)
                     error_stream.flush()
@@ -332,16 +423,18 @@ def run_monitor(
         try:
             return_code = process.wait()
         finally:
+            if stdout_thread is not None:
+                stdout_thread.join()
             if relay_thread is not None:
                 relay_thread.join()
             for signum, handler in previous_handlers.items():
                 signal.signal(signum, handler)
 
     if received_signal is not None:
-        if args.output.is_file() and args.output.stat().st_size > 0:
+        if writes_file and args.output.is_file() and args.output.stat().st_size > 0:
             print(f"stopped; partial CSV saved to {args.output}", file=sys.stderr)
         else:
-            print("stopped before PCM wrote its first CSV sample", file=sys.stderr)
+            print("monitor stopped", file=sys.stderr)
         return 128 + received_signal
     if return_code != 0:
         print(
@@ -350,13 +443,23 @@ def run_monitor(
             file=sys.stderr,
         )
         return return_code
-    if not args.output.is_file() or args.output.stat().st_size == 0:
+    if capture_stdout and not saw_csv_output.is_set():
+        print(
+            f"error: {binary.name} completed without writing recognizable CSV data; "
+            f"see {diagnostics}",
+            file=sys.stderr,
+        )
+        return 1
+    if writes_file and (
+        not args.output.is_file() or args.output.stat().st_size == 0
+    ):
         print(
             f"error: {binary.name} completed without writing CSV data; "
             f"see {diagnostics}",
             file=sys.stderr,
         )
         return 1
-    print(f"wrote {args.output}", file=sys.stderr)
+    if writes_file:
+        print(f"wrote {args.output}", file=sys.stderr)
     print(f"diagnostics: {diagnostics}", file=sys.stderr)
     return 0

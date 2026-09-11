@@ -45,7 +45,11 @@ def main() -> int:
         if args.pid <= 0:
             build_parser().error("--pid must be greater than zero")
         native_arguments.extend(["-pid", str(args.pid)])
-    return run_monitor(args, native_arguments)
+    return run_monitor(
+        args,
+        native_arguments,
+        csv_header_prefixes=("System,", "Socket ", "Core"),
+    )
 
 
 if __name__ == "__main__":
