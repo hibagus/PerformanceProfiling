@@ -228,6 +228,59 @@ in PCM's topology, although its filtered counter is still emitted. IDX and DMI
 stacks use the same part IDs for their internal accelerator or DMI channel
 mapping, so their topology is not necessarily the PCIe device-number mapping.
 
+#### IIO traffic terminology
+
+PCM names IIO traffic from the perspective of the transaction initiator and
+the operation it requests. `IB` means a PCIe device initiated a DMA request
+into the host; `OB` means the CPU initiated an MMIO request to a PCIe device.
+`read` and `write` describe the requested operation against the destination
+address space, not simply the direction in which payload data moves.
+
+| PCM metric | Initiator and requested operation |
+| --- | --- |
+| `IB read` | PCIe device reads host memory through DMA |
+| `IB write` | PCIe device writes host memory through DMA |
+| `OB read` | CPU reads the PCIe device through MMIO |
+| `OB write` | CPU writes the PCIe device through MMIO |
+
+Consequently, TransferBench H2D copies normally appear as `IB read`: the GPU's
+DMA engine reads host memory, although the returned payload travels from host
+to GPU. TransferBench D2H copies normally appear as `IB write`: the GPU writes
+the returned data into host memory. `OB read` and `OB write` generally capture
+CPU-issued register or mapped-BAR MMIO rather than the bulk DMA payload.
+
+#### Dell PowerEdge XE9680 GPU-to-IIO mapping
+
+The following mapping was captured on the test platform used by this project:
+a Dell PowerEdge XE9680 with eight AMD Instinct MI300X GPUs and two Sapphire
+Rapids CPU sockets. It is platform- and wiring-specific; do not assume that
+another XE9680 configuration has the same BDFs or IIO routes. The GPU BDF is
+the endpoint reported by TransferBench, while the root-port BDF is the Intel
+root port encoded in the PCM IIO column name.
+
+| GPU | GPU endpoint BDF | NUMA/socket | PCM IIO route and root port | H2D: `IB read` Excel/index | D2H: `IB write` Excel/index |
+| --- | --- | --- | --- | ---: | ---: |
+| GPU0 | `0000:1b:00.0` | 0 | `Socket0 / Stack 2 PCIe0 / Part0 / 15:01.0` | `HC` / 211 | `HB` / 210 |
+| GPU1 | `0000:3d:00.0` | 0 | `Socket0 / Stack 6 PCIe2 / Part0 / 37:01.0` | `MA` / 339 | `LZ` / 338 |
+| GPU2 | `0000:4e:00.0` | 0 | `Socket0 / Stack 9 PCIe4 / Part0 / 48:01.0` | `PS` / 435 | `PR` / 434 |
+| GPU3 | `0000:5f:00.0` | 0 | `Socket0 / Stack 4 PCIe1 / Part0 / 59:01.0` | `JO` / 275 | `JN` / 274 |
+| GPU4 | `0000:9d:00.0` | 1 | `Socket1 / Stack 2 PCIe0 / Part0 / 97:01.0` | `TK` / 531 | `TJ` / 530 |
+| GPU5 | `0000:bd:00.0` | 1 | `Socket1 / Stack 6 PCIe2 / Part0 / b7:01.0` | `YI` / 659 | `YH` / 658 |
+| GPU6 | `0000:cd:00.0` | 1 | `Socket1 / Stack 9 PCIe4 / Part0 / c7:01.0` | `ACA` / 755 | `ABZ` / 754 |
+| GPU7 | `0000:dd:00.0` | 1 | `Socket1 / Stack 4 PCIe1 / Part0 / d7:01.0` | `VW` / 595 | `VV` / 594 |
+
+The Excel letters and 1-based numeric indices above apply to the 865-column
+consolidated schema produced by this PCM version and topology. They can move if
+PCM options, version, or discovered topology changes, so the full header is the
+stable lookup key. For example, GPU4 H2D is:
+
+```text
+pcm_iio__Socket1__IIO_Stack_2_PCIe0__Part0__97_01_0__IB_read_bytes_per_second
+```
+
+Replace `IB_read` with `IB_write` for its D2H column. The same header pattern
+and the route/root-port values in the table identify the other GPUs.
+
 Stack aggregate columns omit the root-port component and use this form:
 
 ```text
