@@ -194,10 +194,13 @@ native PCM CPU row. It also sums Part0 through Part7 for every socket/IIO stack
 and bandwidth direction, so both per-root-port detail and stack totals are
 available in the same row.
 
-The combined monitor omits per-core CPU metrics by default. System- and
-socket-level CPU, memory, and UPI metrics remain enabled. This keeps the native
-PCM schema stable while `pcm-iio` is active and avoids per-core `resctrl`
-discovery races observed when both PCM processes initialize concurrently.
+The combined monitor omits per-core CPU metrics and disables CPU RDT metrics by
+default. System- and socket-level CPU, memory, and UPI metrics remain enabled.
+Disabling RDT prevents a mounted but inaccessible or stale Linux `resctrl`
+hierarchy from making `pcm` repeatedly emit headers without a numeric sample.
+Use `--cpu-rdt` only when L3 occupancy and local/remote memory-bandwidth RDT
+metrics are required and the collector can create and read its resctrl monitor
+groups.
 
 ```bash
 python3 pcm_cpu_iio_combined_monitor.py \

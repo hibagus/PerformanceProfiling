@@ -105,6 +105,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="include per-core metrics (may be unstable with concurrent pcm-iio)",
     )
+    parser.add_argument(
+        "--cpu-rdt",
+        dest="no_cpu_rdt",
+        action="store_false",
+        help=(
+            "enable CPU RDT metrics; disabled by default because resctrl access "
+            "can prevent pcm from producing samples"
+        ),
+    )
     parser.add_argument("--no-sockets", action="store_true")
     parser.add_argument("--no-system", action="store_true")
     parser.add_argument("--no-root-ports", action="store_true")
@@ -119,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     privilege.add_argument(
         "--no-sudo", dest="sudo_mode", action="store_const", const="never"
     )
-    parser.set_defaults(sudo_mode="auto", no_cores=True)
+    parser.set_defaults(sudo_mode="auto", no_cores=True, no_cpu_rdt=True)
     parser.add_argument("--show-topology-warnings", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -175,6 +184,10 @@ def child_commands(
     ]
     if args.no_cores:
         cpu_command.append("--no-cores")
+    if args.no_cpu_rdt:
+        cpu_command.append("--no-rdt")
+    else:
+        cpu_command.append("--rdt")
     if args.no_sockets:
         cpu_command.append("--no-sockets")
     if args.no_system:
@@ -725,7 +738,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return cpu_status if cpu_status != 0 else iio_status
-    if received_signal is not None and not cpu_output.is_file():
+    if received_signal is not None and not (
+        cpu_output.is_file() and iio_output.is_file()
+    ):
         return 128 + received_signal
 
     tolerance = (

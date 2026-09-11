@@ -159,6 +159,20 @@ def add_common_arguments(
         action="store_true",
         help="let PCM disable the NMI watchdog while it runs",
     )
+    rdt = parser.add_mutually_exclusive_group()
+    rdt.add_argument(
+        "--no-rdt",
+        dest="no_rdt",
+        action="store_true",
+        help="disable PCM RDT metrics (sets PCM_NO_RDT=1)",
+    )
+    rdt.add_argument(
+        "--rdt",
+        dest="no_rdt",
+        action="store_false",
+        help="enable PCM RDT metrics (sets PCM_NO_RDT=0)",
+    )
+    parser.set_defaults(no_rdt=None)
     parser.add_argument(
         "--pcm-arg",
         action="append",
@@ -233,6 +247,8 @@ def run_monitor(
             f"PCM_NO_MSR={'1' if args.no_msr else '0'}",
             f"PCM_KEEP_NMI_WATCHDOG={'0' if args.disable_nmi_watchdog else '1'}",
         ]
+        if args.no_rdt is not None:
+            environment_values.append(f"PCM_NO_RDT={'1' if args.no_rdt else '0'}")
         if args.dry_run:
             printable_command = command
             if use_sudo and os.geteuid() != 0:
@@ -264,6 +280,8 @@ def run_monitor(
     environment["PCM_KEEP_NMI_WATCHDOG"] = (
         "0" if args.disable_nmi_watchdog else "1"
     )
+    if args.no_rdt is not None:
+        environment["PCM_NO_RDT"] = "1" if args.no_rdt else "0"
 
     elevated = use_sudo and os.geteuid() != 0
     if elevated:
