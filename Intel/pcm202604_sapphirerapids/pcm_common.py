@@ -18,6 +18,24 @@ from pathlib import Path
 from typing import Sequence
 
 
+MCFG_PATHS = (
+    Path("/sys/firmware/acpi/tables/MCFG"),
+    Path("/sys/firmware/acpi/tables/MCFG1"),
+)
+
+
+def needs_sudo(mode: str, *, force: bool = False) -> bool:
+    """Decide whether a native PCM collector should be elevated."""
+
+    if os.geteuid() == 0 or mode == "never":
+        return False
+    if mode == "always":
+        return True
+    return force or not any(
+        path.is_file() and os.access(path, os.R_OK) for path in MCFG_PATHS
+    )
+
+
 def positive_float(value: str) -> float:
     """Parse a finite floating-point value greater than zero."""
 
@@ -291,10 +309,10 @@ def run_monitor(
             print("error: sudo is required but was not found on PATH", file=sys.stderr)
             return 2
         print(
-            "pcm-iio needs privileged PCI topology access; invoking sudo.",
+            f"{binary.name} needs privileged hardware access; invoking sudo.",
             file=sys.stderr,
         )
-        # Pre-create a new artifact as the calling user. pcm-iio truncates the
+        # Pre-create a new artifact as the calling user. PCM truncates the
         # existing inode, so sudo does not make ordinary outputs root-owned.
         if writes_file and not args.output.exists():
             args.output.touch()

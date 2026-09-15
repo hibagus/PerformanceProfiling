@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-from pcm_common import add_common_arguments, run_monitor
+from pcm_common import add_common_arguments, needs_sudo, run_monitor
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,6 +29,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-system", action="store_true", help="omit system aggregate columns"
     )
     parser.add_argument("--pid", type=int, help="collect core metrics for this process ID")
+    privilege = parser.add_mutually_exclusive_group()
+    privilege.add_argument(
+        "--sudo",
+        dest="sudo_mode",
+        action="store_const",
+        const="always",
+        help="always launch the native pcm binary through sudo",
+    )
+    privilege.add_argument(
+        "--no-sudo",
+        dest="sudo_mode",
+        action="store_const",
+        const="never",
+        help="never launch the native pcm binary through sudo",
+    )
+    parser.set_defaults(sudo_mode="auto")
     return parser
 
 
@@ -48,6 +64,7 @@ def main() -> int:
     return run_monitor(
         args,
         native_arguments,
+        use_sudo=needs_sudo(args.sudo_mode, force=args.no_rdt is False),
         csv_header_prefixes=("System,", "Socket ", "Core"),
     )
 

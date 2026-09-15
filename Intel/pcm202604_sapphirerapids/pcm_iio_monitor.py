@@ -4,32 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import os
-from pathlib import Path
-
-from pcm_common import add_common_arguments, run_monitor
-
-
-MCFG_PATHS = (
-    Path("/sys/firmware/acpi/tables/MCFG"),
-    Path("/sys/firmware/acpi/tables/MCFG1"),
-)
+from pcm_common import add_common_arguments, needs_sudo, run_monitor
 
 KNOWN_TOPOLOGY_WARNINGS = (
     "Cannot map CPU bus ",
     "IIO PMU unit (stack) 10 is not found",
     "IIO PMU unit (stack) 11 is not found",
 )
-
-
-def needs_sudo(mode: str) -> bool:
-    """Decide whether pcm-iio should be launched through sudo."""
-
-    if os.geteuid() == 0 or mode == "never":
-        return False
-    if mode == "always":
-        return True
-    return not any(path.is_file() and os.access(path, os.R_OK) for path in MCFG_PATHS)
 
 
 def build_parser() -> argparse.ArgumentParser:

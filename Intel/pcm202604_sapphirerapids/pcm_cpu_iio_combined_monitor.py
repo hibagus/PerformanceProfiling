@@ -20,8 +20,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TextIO
 
-from pcm_common import default_binary, positive_float, resolve_binary, utc_run_id
-from pcm_iio_monitor import needs_sudo
+from pcm_common import (
+    default_binary,
+    needs_sudo,
+    positive_float,
+    resolve_binary,
+    utc_run_id,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -181,6 +186,11 @@ def child_commands(
         str(cpu_output),
         "--stderr-log",
         str(cpu_output.with_name(f"{cpu_output.stem}_stderr.log")),
+        (
+            "--sudo"
+            if needs_sudo(args.sudo_mode, force=not args.no_cpu_rdt)
+            else "--no-sudo"
+        ),
     ]
     if args.no_cores:
         cpu_command.append("--no-cores")
@@ -220,12 +230,16 @@ def child_commands(
 def authenticate_sudo(args: argparse.Namespace) -> None:
     """Populate sudo's credential cache before starting synchronized children."""
 
-    if not needs_sudo(args.sudo_mode):
+    cpu_needs_sudo = needs_sudo(
+        args.sudo_mode,
+        force=not args.no_cpu_rdt,
+    )
+    if not (cpu_needs_sudo or needs_sudo(args.sudo_mode)):
         return
     sudo = shutil.which("sudo")
     if sudo is None:
-        raise RuntimeError("sudo is required for pcm-iio but was not found on PATH")
-    print("Authenticating sudo once for pcm-iio ...", file=sys.stderr)
+        raise RuntimeError("sudo is required for PCM but was not found on PATH")
+    print("Authenticating sudo once for PCM collectors ...", file=sys.stderr)
     result = subprocess.run([sudo, "-v"], check=False)
     if result.returncode != 0:
         raise RuntimeError(

@@ -202,6 +202,19 @@ Use `--cpu-rdt` only when L3 occupancy and local/remote memory-bandwidth RDT
 metrics are required and the collector can create and read its resctrl monitor
 groups.
 
+On Linux, prepare RDT on the host before using `--cpu-rdt`:
+
+```bash
+sudo mount -t resctrl resctrl /sys/fs/resctrl
+findmnt /sys/fs/resctrl
+```
+
+When `resctrl` is mounted and `--cpu-rdt` is selected, automatic privilege
+detection elevates the native `pcm` binary so it can manage resctrl monitoring
+groups. In a container, mount `resctrl` on the host and expose that mount to the
+container; a read-only `/sys` or missing `CAP_SYS_ADMIN` prevents mounting it
+from inside the container.
+
 ```bash
 python3 pcm_cpu_iio_combined_monitor.py \
   --interval 1 \
@@ -418,16 +431,24 @@ The system's `perf_event_paranoid` policy must permit the required counters.
 Use `--direct-msr` only when direct MSR and PCI configuration access has been
 deliberately provided.
 
-### `pcm-iio` requests sudo
+### PCM requests sudo
 
-IIO topology discovery may require the ACPI MCFG table. If it is unreadable,
-the wrapper interactively elevates only the native `pcm-iio` command. The CSV
-is pre-created by the calling user so output ownership is preserved.
+CPU TPMI and IIO topology discovery may require the ACPI MCFG table. If it is
+unreadable, the wrappers interactively elevate only the native `pcm` or
+`pcm-iio` binary. CPU RDT collection also requests elevation. CSV files are
+pre-created by the calling user so output ownership is preserved. This gives
+CPU PCM access to TPMI-derived uncore-frequency data without weakening ACPI
+sysfs permissions.
 
 ```bash
+python3 pcm_cpu_monitor.py --sudo     # Force CPU PCM elevation
+python3 pcm_cpu_monitor.py --no-sudo  # Never elevate CPU PCM
 python3 pcm_iio_monitor.py --sudo     # Force elevation
 python3 pcm_iio_monitor.py --no-sudo  # Never elevate
 ```
+
+The combined monitor applies its `--sudo`, `--no-sudo`, or automatic decision
+to both native collectors and authenticates once before starting either child.
 
 ### Repetitive topology warnings
 
