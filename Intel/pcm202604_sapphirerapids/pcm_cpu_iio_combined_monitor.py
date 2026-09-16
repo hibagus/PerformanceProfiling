@@ -7,6 +7,7 @@ import argparse
 import bisect
 import csv
 import math
+import os
 import re
 import shlex
 import shutil
@@ -312,11 +313,17 @@ def run_children(
         signum: signal.signal(signum, stop)
         for signum in (signal.SIGINT, signal.SIGTERM)
     }
+    child_environment = os.environ.copy()
+    # authenticate_sudo() has already populated the ticket. Nested collectors
+    # must never prompt again after their output has been redirected to logs.
+    child_environment["PCM_SUDO_NONINTERACTIVE"] = "1"
     try:
         # Establish pcm's native schema before pcm-iio programs or discovers
         # any uncore resources. Starting them in the opposite order can make
         # pcm emit duplicated header groups on some Sapphire Rapids systems.
-        cpu_process = subprocess.Popen(commands[0], start_new_session=True)
+        # Keep both wrappers in this controlling-terminal session so sudo
+        # policies scoped by terminal can see authenticate_sudo()'s ticket.
+        cpu_process = subprocess.Popen(commands[0], env=child_environment)
         processes.append(cpu_process)
         deadline = time.monotonic() + startup_timeout
         while not cpu_has_sample(cpu_output):
@@ -336,7 +343,7 @@ def run_children(
         if received_signal is None:
             # Keep the IIO wrapper attached to this controlling terminal. Its
             # nested sudo process may need the terminal even after `sudo -v`.
-            iio_process = subprocess.Popen(commands[1])
+            iio_process = subprocess.Popen(commands[1], env=child_environment)
             processes.append(iio_process)
             deadline = time.monotonic() + startup_timeout
             while not iio_has_sample(iio_output):

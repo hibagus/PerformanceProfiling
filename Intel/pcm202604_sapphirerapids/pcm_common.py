@@ -256,6 +256,8 @@ def run_monitor(
 ) -> int:
     """Execute one PCM utility and preserve its native, version-specific CSV."""
 
+    sudo_noninteractive = os.environ.get("PCM_SUDO_NONINTERACTIVE") == "1"
+
     try:
         binary = resolve_binary(args.binary)
         diagnostics = diagnostic_path(args)
@@ -270,10 +272,15 @@ def run_monitor(
         if args.dry_run:
             printable_command = command
             if use_sudo and os.geteuid() != 0:
+                sudo_arguments = ["sudo"]
+                if sudo_noninteractive:
+                    sudo_arguments.append("-n")
+                else:
+                    sudo_arguments.extend(
+                        ("--prompt", "[sudo] password for %u:\n")
+                    )
                 printable_command = [
-                    "sudo",
-                    "--prompt",
-                    "[sudo] password for %u:\n",
+                    *sudo_arguments,
                     "--",
                     shutil.which("env") or "/usr/bin/env",
                     *environment_values,
@@ -316,10 +323,13 @@ def run_monitor(
         # existing inode, so sudo does not make ordinary outputs root-owned.
         if writes_file and not args.output.exists():
             args.output.touch()
+        sudo_arguments = [sudo]
+        if sudo_noninteractive:
+            sudo_arguments.append("-n")
+        else:
+            sudo_arguments.extend(("--prompt", "[sudo] password for %u:\n"))
         command = [
-            sudo,
-            "--prompt",
-            "[sudo] password for %u:\n",
+            *sudo_arguments,
             "--",
             env,
             *environment_values,

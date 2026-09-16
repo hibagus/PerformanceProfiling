@@ -449,6 +449,9 @@ python3 pcm_iio_monitor.py --no-sudo  # Never elevate
 
 The combined monitor applies its `--sudo`, `--no-sudo`, or automatic decision
 to both native collectors and authenticates once before starting either child.
+The child collectors stay in the same controlling-terminal session and use
+non-interactive `sudo -n`, so they reuse that ticket and can never pause a
+redirected run for another password prompt.
 
 ### Repetitive topology warnings
 
