@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import shutil
 import signal
@@ -114,7 +115,11 @@ def printable_command(command: list[str]) -> str:
 def normalize_csv_header(header: str) -> str:
     """Make the directionality and unit of AMD-SMI's PCIe field explicit."""
 
-    columns = header.split(",")
+    columns = next(csv.reader([header]))
+    required = {"timestamp", "gpu", "pcie_bw"}
+    if not required.issubset(columns):
+        missing = ", ".join(sorted(required.difference(columns)))
+        raise ValueError(f"AMD-SMI CSV header is missing required columns: {missing}")
     return ",".join(
         "pcie_bw_bidirectional_mbps" if column == "pcie_bw" else column
         for column in columns
@@ -191,25 +196,35 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
 
     raw_header: str | None = None
+    expected_columns: int | None = None
+    collection_error: ValueError | None = None
     try:
         assert process.stdout is not None
-        for raw_line in process.stdout:
-            line = raw_line.rstrip("\r\n")
-            if not line or line == "'CTRL' + 'C' to stop watching output:":
-                continue
-            if raw_header is None:
-                raw_header = line
-                output_header = normalize_csv_header(raw_header)
-                for handle, already_has_header in outputs:
-                    if not already_has_header:
-                        handle.write(f"{output_header}\n")
-                        handle.flush()
-                continue
-            if line == raw_header:
-                continue
-            for handle, _already_has_header in outputs:
-                handle.write(f"{line}\n")
-                handle.flush()
+        try:
+            for raw_line in process.stdout:
+                line = raw_line.rstrip("\r\n")
+                if not line or line == "'CTRL' + 'C' to stop watching output:":
+                    continue
+                if raw_header is None:
+                    raw_header = line
+                    output_header = normalize_csv_header(raw_header)
+                    expected_columns = len(next(csv.reader([raw_header])))
+                    for handle, already_has_header in outputs:
+                        if not already_has_header:
+                            handle.write(f"{output_header}\n")
+                            handle.flush()
+                    continue
+                if line == raw_header:
+                    continue
+                if len(next(csv.reader([line]))) != expected_columns:
+                    raise ValueError(
+                        "AMD-SMI emitted a malformed CSV row with an unexpected column count"
+                    )
+                for handle, _already_has_header in outputs:
+                    handle.write(f"{line}\n")
+                    handle.flush()
+        except (csv.Error, ValueError) as error:
+            collection_error = ValueError(str(error))
     finally:
         if process.poll() is None:
             process.terminate()
@@ -221,6 +236,12 @@ def main() -> int:
     if received_signal is not None:
         print("Telemetry stopped.", file=sys.stderr)
         return 128 + received_signal
+    if collection_error is not None:
+        print(f"Error: {collection_error}", file=sys.stderr)
+        return 1
+    if raw_header is None:
+        print("Error: amd-smi monitor produced no CSV header", file=sys.stderr)
+        return 1
     if return_code != 0:
         print(f"Error: amd-smi monitor exited with status {return_code}", file=sys.stderr)
         return return_code

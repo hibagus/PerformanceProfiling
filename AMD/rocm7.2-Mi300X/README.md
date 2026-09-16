@@ -221,9 +221,74 @@ The xGMI monitor repeatedly invokes:
 amd-smi xgmi --metric --gpu all --json
 ```
 
-AMD-SMI 27.0 returns the complete peer matrix only when all GPUs are queried.
+AMD-SMI 26.2.1 returns the complete peer matrix only when all GPUs are queried.
 The script therefore queries all GPUs and applies `--gpus` afterward as a
 source-GPU filter.
+
+#### ROCm 7.2 peer-label correction
+
+On the tested ROCm 7.2.0/AMD-SMI 26.2.1 host, the `gpu` and `bdf` attached to
+each AMD-SMI peer counter identify an internal counter slot, not the logical
+TransferBench destination. Isolated tests of all 56 directed pairs established
+the following map. Each cell is the **raw AMD-SMI peer GPU label** used for the
+logical destination in its column; `—` is the self-link.
+
+| Source \ logical destination | GPU0 | GPU1 | GPU2 | GPU3 | GPU4 | GPU5 | GPU6 | GPU7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| GPU0 | — | 7 | 1 | 6 | 3 | 2 | 4 | 5 |
+| GPU1 | 6 | — | 7 | 4 | 0 | 2 | 3 | 5 |
+| GPU2 | 3 | 5 | — | 6 | 0 | 7 | 4 | 1 |
+| GPU3 | 4 | 7 | 1 | — | 6 | 2 | 0 | 5 |
+| GPU4 | 6 | 5 | 7 | 0 | — | 2 | 3 | 1 |
+| GPU5 | 6 | 7 | 1 | 0 | 3 | — | 4 | 2 |
+| GPU6 | 3 | 7 | 1 | 4 | 0 | 2 | — | 5 |
+| GPU7 | 4 | 2 | 5 | 0 | 6 | 1 | 3 | — |
+
+The default `--peer-map rocm72-mi300x` corrects `peer_gpu` and `peer_bdf` while
+retaining the original labels in `raw_peer_gpu` and `raw_peer_bdf`. Use
+`--peer-map none` only for raw-counter investigation. The mapping is specific
+to this validated eight-GPU MI300X topology; the monitor stops with an error if
+the observed topology cannot be mapped.
+
+#### Which counters overlap or “collide”
+
+No two logical peers of one source map to the same raw counter: every row in
+the mapping above is a seven-element bijection. Consequently, simultaneous
+GPU0→GPU1 and GPU0→GPU7 traffic remains separated as raw `GPU0→GPU7` and
+`GPU0→GPU5`; the monitor does not sum them. Concurrent GPU0→GPU1 and GPU2→GPU3
+also uses four distinct endpoint rows.
+
+There is intentional **endpoint mirroring**, however. A physical link is
+reported once at each endpoint. These are the two raw rows that observe each
+logical GPU pair:
+
+| Logical link | Raw endpoint counters | Logical link | Raw endpoint counters |
+| --- | --- | --- | --- |
+| GPU0↔GPU1 | GPU0→7, GPU1→6 | GPU0↔GPU2 | GPU0→1, GPU2→3 |
+| GPU0↔GPU3 | GPU0→6, GPU3→4 | GPU0↔GPU4 | GPU0→3, GPU4→6 |
+| GPU0↔GPU5 | GPU0→2, GPU5→6 | GPU0↔GPU6 | GPU0→4, GPU6→3 |
+| GPU0↔GPU7 | GPU0→5, GPU7→4 | GPU1↔GPU2 | GPU1→7, GPU2→5 |
+| GPU1↔GPU3 | GPU1→4, GPU3→7 | GPU1↔GPU4 | GPU1→0, GPU4→5 |
+| GPU1↔GPU5 | GPU1→2, GPU5→7 | GPU1↔GPU6 | GPU1→3, GPU6→7 |
+| GPU1↔GPU7 | GPU1→5, GPU7→2 | GPU2↔GPU3 | GPU2→6, GPU3→1 |
+| GPU2↔GPU4 | GPU2→0, GPU4→7 | GPU2↔GPU5 | GPU2→7, GPU5→1 |
+| GPU2↔GPU6 | GPU2→4, GPU6→1 | GPU2↔GPU7 | GPU2→1, GPU7→5 |
+| GPU3↔GPU4 | GPU3→6, GPU4→0 | GPU3↔GPU5 | GPU3→2, GPU5→0 |
+| GPU3↔GPU6 | GPU3→0, GPU6→4 | GPU3↔GPU7 | GPU3→5, GPU7→0 |
+| GPU4↔GPU5 | GPU4→2, GPU5→3 | GPU4↔GPU6 | GPU4→3, GPU6→0 |
+| GPU4↔GPU7 | GPU4→1, GPU7→6 | GPU5↔GPU6 | GPU5→4, GPU6→2 |
+| GPU5↔GPU7 | GPU5→2, GPU7→1 | GPU6↔GPU7 | GPU6→5, GPU7→3 |
+
+For traffic A→B, endpoint A's `write` and endpoint B's `read` measure the same
+transfer from opposite endpoints. Summing those two rows double-counts it.
+Reverse B→A traffic uses the other direction fields in the same endpoint-row
+pair. Simultaneous bidirectional traffic therefore shares the two endpoint
+rows, but remains separated into `read_gb_s` and `write_gb_s`. `total_gb_s` and
+`bidirectional_utilization_pct` intentionally combine both directions; use the
+directional fields when attributing a one-way workload.
+
+The code applies each raw row independently and rejects duplicate logical keys;
+there is no monitor-side aggregation of different GPU pairs.
 
 For every directed peer link, the rate is calculated from the counter delta and
 measured elapsed time:
@@ -242,6 +307,9 @@ python3 amdsmi_xgmi_bw_monitor.py -g 0 -w 1 -W 60
 
 # Use a 500 ms interval and stream the CSV.
 python3 amdsmi_xgmi_bw_monitor.py -g 0 1 -w 0.5 -W 30 --stdout
+
+# Inspect the uncorrected AMD-SMI peer slots (diagnostic use only).
+python3 amdsmi_xgmi_bw_monitor.py -g 0 -W 30 --peer-map none --stdout
 ```
 
 Override capacity or failure handling when required:
@@ -343,6 +411,8 @@ error. The first query establishes the baseline and produces no rate rows.
 | `interval_seconds` | Measured time between query midpoints | s |
 | `source_gpu` / `peer_gpu` | Directed link endpoints | GPU index |
 | `source_bdf` / `peer_bdf` | PCI addresses for the endpoints | BDF |
+| `raw_peer_gpu` / `raw_peer_bdf` | Uncorrected AMD-SMI counter-slot identity | GPU index / BDF |
+| `peer_mapping` | Mapping profile used (`rocm72-mi300x` or `none`) | — |
 | `read_counter_kb` / `write_counter_kb` | Current cumulative counters | decimal KB |
 | `read_delta_kb` / `write_delta_kb` | Counter changes during the interval | decimal KB |
 | `read_gb_s` / `write_gb_s` | Calculated directional rates | decimal GB/s |
@@ -405,18 +475,27 @@ default basis for utilization.
 ## Validation
 
 Validation covered syntax, arguments, CSV structure, append and collision
-behavior, counter resets, live telemetry, and controlled traffic.
+behavior, counter resets, live telemetry, and controlled traffic. TransferBench
+was built against ROCm 7.2.0 and exercised all 56 directed GPU pairs.
 
-TransferBench generated sustained CPU-to-GPU, GPU-to-CPU, and GPU-to-GPU
-traffic. Representative GPU 0 → GPU 1 results were:
+The isolated directed-pair matrix produced:
 
 | Measurement | Result |
 | --- | ---: |
-| TransferBench application payload | 49.14 GB/s |
-| xGMI monitor median write traffic | 58.47 GB/s |
-| xGMI monitor peak write traffic | 61.57 GB/s |
-| Configured per-direction capacity | 64 GB/s |
-| Peak reported write utilization | 96.2% |
+| TransferBench median application payload | 48.272 GB/s |
+| TransferBench range | 47.365–48.606 GB/s |
+| xGMI source-write median | 57.144 GB/s |
+| xGMI source-write range | 56.353–57.709 GB/s |
+| Source-write vs destination-read maximum difference | 0.123 GB/s |
+| Counter status | `ok` for every tested pair |
+
+Controlled concurrent tests confirmed the ownership rules:
+
+- GPU0→GPU1 used raw rows GPU0→7 and GPU1→6.
+- GPU2→GPU3 simultaneously used GPU2→6 and GPU3→1, with no shared row.
+- GPU0→GPU1 plus GPU0→GPU7 used distinct GPU0 source rows 7 and 5.
+- Bidirectional GPU0↔GPU1 shared its endpoint-row pair as expected, with the
+  two directions separated into read and write counters.
 
 AMD-SMI counts link-accounted traffic, so it need not equal application payload
 throughput. Protocol overhead, counter semantics, sampling windows, and
@@ -474,7 +553,7 @@ immediately.
 
 ## Known limitations
 
-- Parsing follows the AMD-SMI CLI schema observed with ROCm 10.0; future schema
+- Parsing follows the AMD-SMI CLI schema observed with ROCm 7.2.0; future schema
   changes may require updates.
 - `pcie_bw_bidirectional_mbps` combines transmit and receive traffic and does
   not expose the directions separately on the tested platform.
@@ -496,6 +575,8 @@ rocm7.2-Mi300X/
 ├── amdsmi_common.py
 ├── amdsmi_gpu_monitor.py
 ├── amdsmi_xgmi_bw_monitor.py
+├── tests/
+│   └── test_xgmi_mapping.py
 └── README.md
 ```
 

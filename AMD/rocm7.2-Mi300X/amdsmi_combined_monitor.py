@@ -68,6 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=64.0,
         help="xGMI capacity in each direction in GB/s (default: 64)",
     )
+    parser.add_argument(
+        "--peer-map",
+        choices=("rocm72-mi300x", "none"),
+        default="rocm72-mi300x",
+        help="xGMI raw-peer mapping profile (default: rocm72-mi300x)",
+    )
     parser.add_argument("--query-timeout", type=positive_float, default=10.0)
     parser.add_argument("--max-errors", type=positive_int, default=3)
     parser.add_argument("--ecc", action="store_true")
@@ -124,6 +130,8 @@ def monitor_commands(
         *common,
         "--link-capacity-gb-s",
         str(args.link_capacity_gb_s),
+        "--peer-map",
+        args.peer_map,
         "--query-timeout",
         str(args.query_timeout),
         "--max-errors",
@@ -217,9 +225,13 @@ def read_xgmi_samples(
                 peer_gpu = int(row["peer_gpu"])
             except (TypeError, ValueError) as error:
                 raise ValueError(f"invalid xGMI identifiers on CSV row {row_number}") from error
-            grouped[(source_gpu, timestamp)][peer_gpu] = row[
-                "bidirectional_utilization_pct"
-            ]
+            sample_key = (source_gpu, timestamp)
+            if peer_gpu in grouped[sample_key]:
+                raise ValueError(
+                    "xGMI CSV contains a duplicate logical counter for "
+                    f"GPU{source_gpu}->GPU{peer_gpu} at {timestamp}"
+                )
+            grouped[sample_key][peer_gpu] = row["bidirectional_utilization_pct"]
             peers.add(peer_gpu)
 
     by_source: dict[int, list[tuple[float, dict[int, str]]]] = defaultdict(list)
