@@ -54,6 +54,27 @@ KB_TO_GB = 1_000.0 / 1_000_000_000.0
 # This can be adjusted through "--link-capacity-gb-s" if the user knows the actual link capacity of their system.
 MAX_XGMI_BANDWIDTH_GB_S = 64.0
 
+# AMD-SMI 26.2.1 on the validated ROCm 7.2.0 MI300X host returns a peer GPU
+# label that is a counter-slot identifier, not the logical destination GPU.
+# This table was derived from isolated TransferBench transfers for all 56
+# directed GPU pairs.  It maps (source GPU, raw AMD-SMI peer slot) to the
+# logical peer GPU.  Each source row is deliberately a bijection: remapping
+# changes identity only and never combines counters.
+ROCM72_MI300X_RAW_TO_LOGICAL_PEER = {
+    0: {1: 2, 2: 5, 3: 4, 4: 6, 5: 7, 6: 3, 7: 1},
+    1: {0: 4, 2: 5, 3: 6, 4: 3, 5: 7, 6: 0, 7: 2},
+    2: {0: 4, 1: 7, 3: 0, 4: 6, 5: 1, 6: 3, 7: 5},
+    3: {0: 6, 1: 2, 2: 5, 4: 0, 5: 7, 6: 4, 7: 1},
+    4: {0: 3, 1: 7, 2: 5, 3: 6, 5: 1, 6: 0, 7: 2},
+    5: {0: 3, 1: 2, 2: 7, 3: 4, 4: 6, 6: 0, 7: 1},
+    6: {0: 4, 1: 2, 2: 5, 3: 0, 4: 3, 5: 7, 7: 1},
+    7: {0: 3, 1: 5, 2: 1, 3: 6, 4: 0, 5: 2, 6: 4},
+}
+
+PEER_MAPS = {
+    "rocm72-mi300x": ROCM72_MI300X_RAW_TO_LOGICAL_PEER,
+}
+
 #%% CSV_Fields
 # This is the CSV header produced by this script.
 CSV_FIELDS = (
@@ -64,6 +85,9 @@ CSV_FIELDS = (
     "source_bdf",
     "peer_gpu",
     "peer_bdf",
+    "raw_peer_gpu",
+    "raw_peer_bdf",
+    "peer_mapping",
     "read_counter_kb",
     "write_counter_kb",
     "read_delta_kb",
@@ -87,6 +111,9 @@ class LinkCounter:
     source_bdf: str
     peer_gpu: int
     peer_bdf: str
+    raw_peer_gpu: int
+    raw_peer_bdf: str
+    peer_mapping: str
     read_kb: float
     write_kb: float
 
@@ -140,7 +167,7 @@ def counter_as_kb(value: Any) -> float | None:
 
 
 def parse_xgmi_links(payload: dict[str, Any]) -> dict[tuple[int, int], LinkCounter]:
-    """Extract valid directed per-peer counters from an AMD-SMI JSON payload."""
+    """Extract raw directed per-peer counters from an AMD-SMI JSON payload."""
 
     links: dict[tuple[int, int], LinkCounter] = {}
     for source in nested_dicts(payload.get("xgmi_metric", [])):
@@ -169,21 +196,94 @@ def parse_xgmi_links(payload: dict[str, Any]) -> dict[tuple[int, int], LinkCount
                 source_bdf=str(source.get("bdf", "")),
                 peer_gpu=peer_gpu,
                 peer_bdf=str(peer.get("bdf", "")),
+                raw_peer_gpu=peer_gpu,
+                raw_peer_bdf=str(peer.get("bdf", "")),
+                peer_mapping="none",
                 read_kb=read_kb,
                 write_kb=write_kb,
             )
+            if counter.key in links:
+                raise RuntimeError(
+                    "AMD-SMI returned duplicate raw XGMI counter row for "
+                    f"GPU{source_gpu}->raw peer GPU{peer_gpu}"
+                )
             links[counter.key] = counter
     return links
 
 
-def query_xgmi(gpu_ids: list[int], timeout: float) -> Sample:
+def validate_peer_map(peer_map: dict[int, dict[int, int]]) -> None:
+    """Reject maps that could merge raw rows or assign a self-link."""
+
+    expected_gpus = set(range(8))
+    if set(peer_map) != expected_gpus:
+        raise RuntimeError("peer map must contain source GPUs 0 through 7")
+    for source_gpu, source_map in peer_map.items():
+        expected_peers = expected_gpus - {source_gpu}
+        if set(source_map) != expected_peers:
+            raise RuntimeError(
+                f"peer map for GPU{source_gpu} must contain every non-self raw peer"
+            )
+        logical_peers = list(source_map.values())
+        if set(logical_peers) != expected_peers or len(logical_peers) != len(set(logical_peers)):
+            raise RuntimeError(
+                f"peer map for GPU{source_gpu} is not a one-to-one logical peer mapping"
+            )
+
+
+def remap_peer_counters(
+    raw_links: dict[tuple[int, int], LinkCounter],
+    profile: str,
+) -> dict[tuple[int, int], LinkCounter]:
+    """Relabel raw peer slots without aggregating or discarding any row."""
+
+    if profile == "none":
+        return raw_links
+
+    peer_map = PEER_MAPS[profile]
+    validate_peer_map(peer_map)
+    gpu_bdfs = {counter.source_gpu: counter.source_bdf for counter in raw_links.values()}
+    remapped: dict[tuple[int, int], LinkCounter] = {}
+    for raw in raw_links.values():
+        try:
+            logical_peer = peer_map[raw.source_gpu][raw.raw_peer_gpu]
+            logical_bdf = gpu_bdfs[logical_peer]
+        except KeyError as error:
+            raise RuntimeError(
+                "the ROCm 7.2 MI300X peer map does not match the AMD-SMI GPU topology: "
+                f"GPU{raw.source_gpu}->raw peer GPU{raw.raw_peer_gpu}"
+            ) from error
+
+        counter = LinkCounter(
+            source_gpu=raw.source_gpu,
+            source_bdf=raw.source_bdf,
+            peer_gpu=logical_peer,
+            peer_bdf=logical_bdf,
+            raw_peer_gpu=raw.raw_peer_gpu,
+            raw_peer_bdf=raw.raw_peer_bdf,
+            peer_mapping=profile,
+            read_kb=raw.read_kb,
+            write_kb=raw.write_kb,
+        )
+        if counter.key in remapped:
+            raise RuntimeError(
+                "peer mapping collision would merge multiple AMD-SMI rows into "
+                f"logical GPU{counter.source_gpu}->GPU{counter.peer_gpu}"
+            )
+        remapped[counter.key] = counter
+
+    if len(remapped) != len(raw_links):
+        raise RuntimeError("peer mapping changed the number of XGMI counter rows")
+    return remapped
+
+
+def query_xgmi(gpu_ids: list[int], timeout: float, peer_mapping: str) -> Sample:
     """Run one AMD-SMI query and timestamp the midpoint of the call.
 
     Querying takes nonzero time. The midpoint is a closer estimate of when the
     returned counters were observed than timestamping only before or after it.
     """
 
-    # AMD-SMI 27.0 only exposes the complete per-peer counter matrix when all
+    # AMD-SMI only exposes the complete per-peer counter matrix when all
     # GPUs are queried. Asking it for one GPU returns an N/A self-link instead
     # of that GPU's links to its peers. Query the full matrix here and apply
     # the user's source-GPU selection after parsing it.
@@ -210,7 +310,7 @@ def query_xgmi(gpu_ids: list[int], timeout: float) -> Sample:
     except json.JSONDecodeError as error:
         raise RuntimeError(f"AMD-SMI returned invalid JSON: {error}") from error
 
-    links = parse_xgmi_links(payload)
+    links = remap_peer_counters(parse_xgmi_links(payload), peer_mapping)
     if gpu_ids:
         selected_gpus = set(gpu_ids)
         links = {
@@ -281,6 +381,9 @@ def bandwidth_rows(
             "source_bdf": now.source_bdf,
             "peer_gpu": now.peer_gpu,
             "peer_bdf": now.peer_bdf,
+            "raw_peer_gpu": now.raw_peer_gpu,
+            "raw_peer_bdf": now.raw_peer_bdf,
+            "peer_mapping": now.peer_mapping,
             "read_counter_kb": format_number(now.read_kb),
             "write_counter_kb": format_number(now.write_kb),
             "unidirectional_capacity_gb_s": f"{capacity_gb_s:.6f}",
@@ -326,6 +429,15 @@ def build_parser(project_root: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="This script is used to collect and monitor xGMI bandwidth utilization between AMD Mi300X GPUs.\n(C) 2026 Bagus Hanindhito, Dell Technologies Inc.",
         formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "--peer-map",
+        choices=("rocm72-mi300x", "none"),
+        default="rocm72-mi300x",
+        help=(
+            "raw AMD-SMI peer-label mapping (default: rocm72-mi300x); "
+            "use 'none' only to inspect uncorrected counter slots"
+        ),
     )
     parser.add_argument(
         "-g",
@@ -453,7 +565,7 @@ def main() -> int:
         while True:
             iteration_started = time.monotonic()
             try:
-                current = query_xgmi(gpu_ids, args.query_timeout)
+                current = query_xgmi(gpu_ids, args.query_timeout, args.peer_map)
                 consecutive_errors = 0
             except (RuntimeError, subprocess.TimeoutExpired) as error:
                 consecutive_errors += 1
