@@ -63,14 +63,23 @@ cd PerformanceProfiling
 
 ### AMD ROCm and MI300X
 
+Choose the toolkit that matches the installed ROCm and AMD-SMI stack:
+
+| Environment | Toolkit | Notes |
+| --- | --- | --- |
+| ROCm 7.2.0 / AMD-SMI 26.2.1 | [`AMD/rocm7.2-Mi300X`](AMD/rocm7.2-Mi300X/README.md) | Corrects the host-specific raw xGMI peer-counter labels and retains their raw identities |
+| ROCm 10.0 / AMD-SMI 27.0 | [`AMD/rocm10.0-Mi300X`](AMD/rocm10.0-Mi300X/README.md) | Uses the peer labels exposed by the validated ROCm 10 environment |
+
 ```bash
-cd AMD/rocm10.0-Mi300X
+cd AMD/rocm7.2-Mi300X
 python3 amdsmi_combined_monitor.py --help
 python3 amdsmi_combined_monitor.py -g 0 -w 1 -W 5
 ```
 
-See the [AMD MI300X monitoring guide](AMD/rocm10.0-Mi300X/README.md) for
-installation, CSV schemas, units, and validation results.
+See the [ROCm 7.2 MI300X monitoring guide](AMD/rocm7.2-Mi300X/README.md) or
+[ROCm 10 MI300X monitoring guide](AMD/rocm10.0-Mi300X/README.md) for the
+matching installation, CSV schemas, counter semantics, units, and validation
+results. Do not interchange the xGMI peer-label assumptions between versions.
 
 ### Intel PCM and Sapphire Rapids
 
@@ -92,6 +101,9 @@ validation workflows.
 
 | Platform | Tool | Purpose |
 | --- | --- | --- |
+| AMD ROCm 7.2 / MI300X | [`amdsmi_combined_monitor.py`](AMD/rocm7.2-Mi300X/README.md#combined-monitor) | Collect and merge GPU telemetry with logically remapped peer xGMI utilization |
+| AMD ROCm 7.2 / MI300X | [`amdsmi_gpu_monitor.py`](AMD/rocm7.2-Mi300X/README.md#gpu-telemetry-monitor) | Validated temperature, power, clocks, utilization, VRAM, and aggregate PCIe bandwidth |
+| AMD ROCm 7.2 / MI300X | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm7.2-Mi300X/README.md#xgmi-bandwidth-monitor) | Per-peer xGMI bandwidth with corrected logical and preserved raw peer identities |
 | AMD ROCm 10.0 / MI300X | [`amdsmi_combined_monitor.py`](AMD/rocm10.0-Mi300X/README.md#combined-monitor) | Collect and merge GPU telemetry with peer xGMI utilization |
 | AMD ROCm 10.0 / MI300X | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) | Temperature, power, clocks, utilization, VRAM, and aggregate PCIe bandwidth |
 | AMD ROCm 10.0 / MI300X | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) | Per-peer xGMI bandwidth and utilization |
@@ -122,9 +134,10 @@ layout, or topology. Review and validate them on the target system before use.
 
 | Measurement goal | Recommended starting point |
 | --- | --- |
-| AMD GPU power, temperature, clocks, utilization, VRAM, and PCIe | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) |
-| AMD GPU-to-GPU xGMI bandwidth | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) |
-| Combined AMD GPU and xGMI telemetry | [`amdsmi_combined_monitor.py`](AMD/rocm10.0-Mi300X/README.md#combined-monitor) |
+| AMD ROCm 7.2 GPU power, temperature, clocks, utilization, VRAM, and PCIe | [`amdsmi_gpu_monitor.py`](AMD/rocm7.2-Mi300X/README.md#gpu-telemetry-monitor) |
+| AMD ROCm 7.2 GPU-to-GPU xGMI bandwidth | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm7.2-Mi300X/README.md#xgmi-bandwidth-monitor) |
+| Combined AMD ROCm 7.2 GPU and xGMI telemetry | [`amdsmi_combined_monitor.py`](AMD/rocm7.2-Mi300X/README.md#combined-monitor) |
+| AMD ROCm 10 GPU or xGMI telemetry | [ROCm 10 MI300X toolkit](AMD/rocm10.0-Mi300X/README.md#usage) |
 | Intel CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) |
 | CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) |
 | Approximate aggregate Intel PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) |
@@ -144,7 +157,7 @@ Python caches, virtual environments, and editor metadata.
 Use a dedicated output directory for longer captures:
 
 ```bash
-python3 AMD/rocm10.0-Mi300X/amdsmi_gpu_monitor.py \
+python3 AMD/rocm7.2-Mi300X/amdsmi_gpu_monitor.py \
   --output-dir runs/telemetry \
   --duration 300
 ```
@@ -159,6 +172,15 @@ workload names, and other environment-specific information.
 Hardware counters and command output can change across drivers, firmware, and
 vendor-tool releases. Treat each toolkit's tested environment as a compatibility
 baseline, not a guarantee for every platform.
+
+On the validated ROCm 7.2 host, AMD-SMI's raw xGMI `peer_gpu` label is a
+counter-slot identifier and does not generally equal the logical destination.
+The ROCm 7.2 monitor applies a one-to-one, per-source mapping and keeps the raw
+identity in separate CSV fields. Different logical GPU pairs are never merged.
+The two endpoint rows for one physical link are mirrored observations, however,
+so adding them would double-count the transfer. See the version-specific
+[mapping table](AMD/rocm7.2-Mi300X/README.md#rocm-72-peer-label-correction) and
+[complete overlap table](AMD/rocm7.2-Mi300X/README.md#which-counters-overlap-or-collide).
 
 When bringing a tool to another environment:
 
@@ -175,6 +197,7 @@ When bringing a tool to another environment:
 ```text
 PerformanceProfiling/
 ├── AMD/
+│   ├── rocm7.2-Mi300X/
 │   ├── rocm10.0-Mi300X/
 │   └── legacy/
 ├── Intel/
