@@ -399,27 +399,83 @@ Validation covered syntax, arguments, CSV structure, GPU selection, append and
 collision behavior, counter resets, NVIDIA driver 610 counter labels, live
 telemetry, and controlled NVLink traffic.
 
-TransferBench 1.70.01 was built with CUDA 13.3 for `sm_90`. A complete 8-GPU
-peer-to-peer matrix used 256 MiB per direction, five timed iterations per pair,
-GPU kernel executors, and both unidirectional and bidirectional modes.
+### TransferBench 10 GB peer-to-peer matrix
+
+TransferBench 1.70.01 was built with CUDA 13.3 for `sm_90`. The test performed
+a complete 8-GPU peer-to-peer matrix with exactly 10,000,000,000 bytes per
+direction, 10 timed iterations per pair, GPU kernel executors, and both
+unidirectional and bidirectional modes:
+
+```bash
+NUM_CPU_DEVICES=0 NUM_GPU_DEVICES=8 P2P_MODE=0 NUM_ITERATIONS=10 \
+  /home/bagus/TransferBench/TransferBenchCuda p2p 10000000000
+```
+
+The test ran on 2026-09-18 while both monitors collected data at a one-second
+target interval. NVLink utilization used the 26.562 GB/s per-direction,
+per-link capacity reported by the installed driver.
 
 | Measurement | Result |
 | --- | ---: |
-| Unidirectional GPU-to-GPU average | 316.48 GB/s |
-| Unidirectional off-diagonal range | 313.16–319.00 GB/s |
-| Bidirectional average per direction | 311.47 GB/s |
-| Combined bidirectional range | 616.84–627.91 GB/s |
-| NVLink counter sampling epochs | 573 |
-| Valid physical-link rows | 82,512 |
-| Median measured sampling interval | 0.250156 s |
-| Counter resets or query failures | 0 |
+| Unidirectional GPU-to-GPU average | 369.94 GB/s |
+| Unidirectional off-diagonal range | 367.87–371.41 GB/s |
+| Bidirectional average per direction | 364.24 GB/s |
+| Combined bidirectional average | 728.49 GB/s |
+| Combined bidirectional range | 727.39–729.33 GB/s |
 
-TransferBench uses CUDA event timing around short transfer bursts, whereas the
-NVLink monitor divides counter changes by the complete interval between
-NVIDIA-SMI queries. The largest sampled aggregate was 17.936 GB/s because the
-sub-millisecond transfers occupied only a small fraction of a roughly 250 ms
-counter interval. This does not conflict with TransferBench's event-timed peak;
-use a sustained workload when validating utilization percentages.
+#### Unidirectional bandwidth matrix
+
+Values are GB/s. Diagonal entries are local GPU copies; off-diagonal entries
+are peer-to-peer copies.
+
+| Source \ Destination | GPU 0 | GPU 1 | GPU 2 | GPU 3 | GPU 4 | GPU 5 | GPU 6 | GPU 7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| GPU 0 | 1733.77 | 371.09 | 371.36 | 371.32 | 371.10 | 371.35 | 371.15 | 371.13 |
+| GPU 1 | 371.32 | 1736.03 | 371.30 | 371.27 | 371.08 | 371.29 | 371.33 | 371.13 |
+| GPU 2 | 371.05 | 370.81 | 1738.49 | 371.06 | 371.28 | 371.10 | 371.10 | 371.31 |
+| GPU 3 | 371.33 | 371.37 | 371.34 | 1736.03 | 371.04 | 371.01 | 371.03 | 371.34 |
+| GPU 4 | 371.36 | 371.41 | 371.31 | 371.19 | 1662.75 | 368.33 | 368.24 | 368.03 |
+| GPU 5 | 368.06 | 368.37 | 368.09 | 368.07 | 368.47 | 1666.21 | 368.22 | 368.45 |
+| GPU 6 | 368.37 | 368.02 | 368.39 | 367.87 | 368.04 | 368.00 | 1663.96 | 368.39 |
+| GPU 7 | 368.36 | 368.36 | 368.38 | 368.43 | 368.10 | 368.35 | 368.37 | 1665.65 |
+
+#### Combined bidirectional bandwidth matrix
+
+Each value is the sum of the two simultaneously measured directions in GB/s.
+
+| Source \ Destination | GPU 0 | GPU 1 | GPU 2 | GPU 3 | GPU 4 | GPU 5 | GPU 6 | GPU 7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| GPU 0 | — | 728.70 | 728.15 | 728.34 | 728.63 | 728.62 | 728.27 | 728.47 |
+| GPU 1 | 728.56 | — | 728.40 | 728.34 | 728.16 | 728.21 | 729.21 | 729.04 |
+| GPU 2 | 728.42 | 728.41 | — | 728.49 | 728.83 | 728.63 | 727.56 | 727.39 |
+| GPU 3 | 728.58 | 727.69 | 728.48 | — | 729.09 | 728.24 | 727.63 | 728.62 |
+| GPU 4 | 728.88 | 728.60 | 727.60 | 728.27 | — | 729.24 | 727.95 | 727.80 |
+| GPU 5 | 728.42 | 728.85 | 728.90 | 728.96 | 728.87 | — | 728.92 | 729.33 |
+| GPU 6 | 728.34 | 728.52 | 728.59 | 728.67 | 728.53 | 727.78 | — | 729.15 |
+| GPU 7 | 728.28 | 728.32 | 728.37 | 728.50 | 728.74 | 729.04 | 728.62 | — |
+
+#### Monitor results during the matrix test
+
+| Measurement | Result |
+| --- | ---: |
+| Monitoring duration | 5,258 seconds |
+| Valid physical-link rows | 756,432 |
+| Median measured NVLink sampling interval | 1.000696 s |
+| Counter resets or query failures | 0 |
+| Consolidated GPU rows matched to NVLink samples | 31,165 / 31,264 (99.68%) |
+| Peak sampled aggregate NVLink traffic | 262.501 GB/s on GPU 4 |
+| Peak sampled Rx / Tx traffic | 131.251 / 131.251 GB/s |
+| Peak aggregate utilization | 27.45% |
+| Peak GPU power | 165 W |
+| Maximum GPU / memory temperature | 30 / 29 °C |
+| Maximum SM utilization | 100% |
+| ECC errors | 0 |
+
+TransferBench uses CUDA event timing around each transfer, whereas the NVLink
+monitor divides physical-link counter changes by the complete interval between
+NVIDIA-SMI queries. The application payload and sampled physical-link values
+therefore use different measurement windows and should not be expected to
+match directly.
 
 Run the software tests without requiring a GPU:
 
