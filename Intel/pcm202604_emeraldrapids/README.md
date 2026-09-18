@@ -301,21 +301,40 @@ to GPU. TransferBench D2H copies normally appear as `IB write`: the GPU writes
 the returned data into host memory. `OB read` and `OB write` generally capture
 CPU-issued register or mapped-BAR MMIO rather than the bulk DMA payload.
 
-#### H200 PCIe and NUMA topology
+#### Dell PowerEdge XE9680L validation topology
 
-The tested node exposes the following GPU endpoints. NVIDIA topology reports
-GPUs 0–3 as local to NUMA node 0 and GPUs 4–7 as local to NUMA node 1.
+The validated system is a Dell PowerEdge XE9680L with two Intel Xeon Platinum
+8570 processors and eight NVIDIA H200 GPUs. Each socket has 56 online physical
+cores; SMT is disabled. GPUs 0–3 attach to socket/NUMA node 0, while GPUs 4–7
+attach to socket/NUMA node 1. NVIDIA reports an `NV18` connection between every
+GPU pair.
 
-| GPU | Endpoint BDF | NUMA | PCM IIO route |
-| --- | --- | ---: | --- |
-| GPU0 | `0000:1b:00.0` | 0 | Socket0 / Stack 1 PCIe3 / Part0 / `15:01.0` |
-| GPU1 | `0000:3c:00.0` | 0 | Socket0 / Stack 3 IDX1 / Part0 / `37:01.0` |
-| GPU2 | `0000:4b:00.0` | 0 | Socket0 / Stack 8 IDX3 / Part0 / `48:01.0` |
-| GPU3 | `0000:5c:00.0` | 0 | Socket0 / Stack 6 PCIe2 / Part0 / `59:01.0` |
-| GPU4 | `0000:9a:00.0` | 1 | Socket1 / Stack 1 PCIe3 / Part0 / `97:01.0` |
-| GPU5 | `0000:bb:00.0` | 1 | Socket1 / Stack 3 IDX1 / Part0 / `b7:01.0` |
-| GPU6 | `0000:cd:00.0` | 1 | Socket1 / Stack 8 IDX3 / Part0 / `c7:01.0` |
-| GPU7 | `0000:dc:00.0` | 1 | Socket1 / Stack 6 PCIe2 / Part0 / `d7:01.0` |
+The mapping below was derived from `nvidia-smi`, Linux PCI sysfs, `lspci`, and
+the PCM IIO topology emitted during the validated TransferBench captures. It is
+specific to this XE9680L configuration and firmware. The Excel letters and
+1-based indices refer to the 862-column consolidated CSV produced with the
+documented default combined-monitor options.
+
+| GPU | GPU endpoint BDF | NUMA/socket | PCM IIO route and root port | H2D: `IB read` Excel/index | D2H: `IB write` Excel/index |
+| --- | --- | --- | --- | ---: | ---: |
+| GPU0 | `0000:1b:00.0` | 0 | `Socket0 / Stack 1 PCIe3 / Part0 / 15:01.0` | `FT` / 176 | `FS` / 175 |
+| GPU1 | `0000:3c:00.0` | 0 | `Socket0 / Stack 3 IDX1 / Part0 / 37:01.0` | `IF` / 240 | `IE` / 239 |
+| GPU2 | `0000:4b:00.0` | 0 | `Socket0 / Stack 8 IDX3 / Part0 / 48:01.0` | `OJ` / 400 | `OI` / 399 |
+| GPU3 | `0000:5c:00.0` | 0 | `Socket0 / Stack 6 PCIe2 / Part0 / 59:01.0` | `LX` / 336 | `LW` / 335 |
+| GPU4 | `0000:9a:00.0` | 1 | `Socket1 / Stack 1 PCIe3 / Part0 / 97:01.0` | `SB` / 496 | `SA` / 495 |
+| GPU5 | `0000:bb:00.0` | 1 | `Socket1 / Stack 3 IDX1 / Part0 / b7:01.0` | `UN` / 560 | `UM` / 559 |
+| GPU6 | `0000:cd:00.0` | 1 | `Socket1 / Stack 8 IDX3 / Part0 / c7:01.0` | `AAR` / 720 | `AAQ` / 719 |
+| GPU7 | `0000:dc:00.0` | 1 | `Socket1 / Stack 6 PCIe2 / Part0 / d7:01.0` | `YF` / 656 | `YE` / 655 |
+
+For example, GPU0 H2D traffic is reported in:
+
+```text
+pcm_iio__Socket0__IIO_Stack_1_PCIe3__Part0__15_01_0__IB_read_bytes_per_second
+```
+
+Replace `IB_read` with `IB_write` for GPU0 D2H traffic. Use the complete header
+name as the stable lookup key because Excel letters and numeric positions can
+change when PCM options, the PCM version, or discovered topology changes.
 
 Discover the PCM IIO stack and root-port mapping on the running firmware with:
 

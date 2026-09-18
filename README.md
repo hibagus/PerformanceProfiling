@@ -111,7 +111,8 @@ python3 pcm_iio_monitor.py --duration 5
 
 See the [Emerald Rapids Intel PCM monitoring guide](Intel/pcm202604_emeraldrapids/README.md)
 for PCM 202604 build instructions, binary discovery, permissions, monitor
-selection, and CUDA TransferBench validation workflows.
+selection, the validated Dell PowerEdge XE9680L CPU/GPU-to-IIO topology, and
+CUDA TransferBench validation workflows.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
