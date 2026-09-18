@@ -94,17 +94,24 @@ See the [CUDA 13.3 H200 monitoring guide](NVIDIA/cuda13.3_H200/README.md) for
 the `nvidia-smi dmon` schema, NVLink counter calculations, capacity choices,
 CSV fields, and the validated eight-GPU TransferBench matrix.
 
-### Intel PCM and Sapphire Rapids
+### Intel PCM
+
+Choose the directory matching the processor generation:
+
+| Processor | Toolkit |
+| --- | --- |
+| Emerald Rapids, including Xeon Platinum 8570 | [`Intel/pcm202604_emeraldrapids`](Intel/pcm202604_emeraldrapids/README.md) |
+| Sapphire Rapids | [`Intel/pcm202604_sapphirerapids`](Intel/pcm202604_sapphirerapids/README.md) |
 
 ```bash
-cd Intel/pcm202604_sapphirerapids
+cd Intel/pcm202604_emeraldrapids
 python3 pcm_iio_monitor.py --help
 python3 pcm_iio_monitor.py --duration 5
 ```
 
-See the [Intel PCM monitoring guide](Intel/pcm202604_sapphirerapids/README.md)
-for binary discovery, permissions, monitor selection, and TransferBench
-validation workflows.
+See the [Emerald Rapids Intel PCM monitoring guide](Intel/pcm202604_emeraldrapids/README.md)
+for PCM 202604 build instructions, binary discovery, permissions, monitor
+selection, and CUDA TransferBench validation workflows.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -123,6 +130,12 @@ validation workflows.
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_combined_monitor.py`](NVIDIA/cuda13.3_H200/README.md#combined-monitor) | Collect and merge GPU telemetry with aggregate physical-link NVLink utilization |
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_gpu_monitor.py`](NVIDIA/cuda13.3_H200/README.md#gpu-telemetry-monitor) | Power, temperature, utilization, clocks, memory, ECC, and PCIe telemetry |
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_nvlink_bw_monitor.py`](NVIDIA/cuda13.3_H200/README.md#nvlink-bandwidth-monitor) | Per-physical-link NVLink bandwidth and utilization from cumulative counters |
+| Intel PCM 202604 / Emerald Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
+| Intel PCM 202604 / Emerald Rapids | [`pcm_cpu_iio_combined_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#combined-cpu-and-iio-monitor) | Concurrent CPU/UPI and IIO telemetry in one timestamp-aligned CSV |
+| Intel PCM 202604 / Emerald Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
+| Intel PCM 202604 / Emerald Rapids | [`pcm_iio_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) | PCIe bandwidth by socket, IIO stack, root port, and device |
+| Intel PCM 202604 / Emerald Rapids | [`validate_pcm_transferbench.py`](Intel/pcm202604_emeraldrapids/README.md#controlled-validation) | Focused CUDA PCIe, IIO, and UPI validation cases |
+| Intel PCM 202604 / Emerald Rapids | [`validate_pcm_cpu_gpu_matrix.py`](Intel/pcm202604_emeraldrapids/README.md#full-cpu-to-gpu-matrix) | Complete CPU-NUMA × GPU × direction validation matrix |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_iio_combined_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#combined-cpu-and-iio-monitor) | Concurrent CPU/UPI and IIO telemetry in one timestamp-aligned CSV |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
@@ -157,9 +170,9 @@ layout, or topology. Review and validate them on the target system before use.
 | NVIDIA H200 power, temperature, utilization, clocks, memory, and PCIe | [`nvsmi_gpu_monitor.py`](NVIDIA/cuda13.3_H200/README.md#gpu-telemetry-monitor) |
 | NVIDIA H200 physical-link NVLink bandwidth | [`nvsmi_nvlink_bw_monitor.py`](NVIDIA/cuda13.3_H200/README.md#nvlink-bandwidth-monitor) |
 | Combined NVIDIA H200 GPU and NVLink telemetry | [`nvsmi_combined_monitor.py`](NVIDIA/cuda13.3_H200/README.md#combined-monitor) |
-| Intel CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) |
-| CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) |
-| Approximate aggregate Intel PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) |
+| Intel Emerald Rapids CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#choosing-a-monitor) |
+| Emerald Rapids CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) |
+| Approximate aggregate Emerald Rapids PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#limits-of-pcm-pcie) |
 | AMD EPYC Milan PCIe, DRAM, or intersocket xGMI counters | [`0x19_0x01.conf`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/0x19_0x01.conf) |
 | Older NVIDIA PCIe or NVLink collection workflow | The corresponding utility under `NVIDIA/legacy/` |
 | Mellanox InfiniBand throughput | `Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/` |
@@ -227,6 +240,7 @@ PerformanceProfiling/
 │   ├── rocm10.0-Mi300X/
 │   └── legacy/
 ├── Intel/
+│   ├── pcm202604_emeraldrapids/
 │   └── pcm202604_sapphirerapids/
 ├── NVIDIA/
 │   ├── cuda13.3_H200/
