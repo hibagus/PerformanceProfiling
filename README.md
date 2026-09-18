@@ -43,12 +43,13 @@ for later analysis.
 The actively maintained toolkits cover:
 
 - AMD Instinct GPU telemetry, PCIe bandwidth, and peer-to-peer xGMI traffic.
+- NVIDIA H200 GPU telemetry, PCIe throughput, and physical-link NVLink traffic.
 - Intel CPU, cache, memory, power, PCIe IIO, and UPI counters.
 
-Older utilities for AMD EPYC, NVIDIA, Mellanox InfiniBand, and Dell iDRAC are
-retained under `legacy/` for reference and reproducibility. Always consult the
-README nearest to a tool because requirements and counter semantics vary by
-platform.
+Older utilities for AMD EPYC, previous NVIDIA collectors, Mellanox InfiniBand,
+and Dell iDRAC are retained under `legacy/` for reference and reproducibility.
+Always consult the README nearest to a tool because requirements and counter
+semantics vary by platform.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -81,6 +82,18 @@ See the [ROCm 7.2 MI300X monitoring guide](AMD/rocm7.2-Mi300X/README.md) or
 matching installation, CSV schemas, counter semantics, units, and validation
 results. Do not interchange the xGMI peer-label assumptions between versions.
 
+### NVIDIA CUDA and H200
+
+```bash
+cd NVIDIA/cuda13.3_H200
+python3 nvsmi_combined_monitor.py --help
+python3 nvsmi_combined_monitor.py -g 0 -w 1 -W 5
+```
+
+See the [CUDA 13.3 H200 monitoring guide](NVIDIA/cuda13.3_H200/README.md) for
+the `nvidia-smi dmon` schema, NVLink counter calculations, capacity choices,
+CSV fields, and the validated eight-GPU TransferBench matrix.
+
 ### Intel PCM and Sapphire Rapids
 
 ```bash
@@ -107,6 +120,9 @@ validation workflows.
 | AMD ROCm 10.0 / MI300X | [`amdsmi_combined_monitor.py`](AMD/rocm10.0-Mi300X/README.md#combined-monitor) | Collect and merge GPU telemetry with peer xGMI utilization |
 | AMD ROCm 10.0 / MI300X | [`amdsmi_gpu_monitor.py`](AMD/rocm10.0-Mi300X/README.md#gpu-telemetry-monitor) | Temperature, power, clocks, utilization, VRAM, and aggregate PCIe bandwidth |
 | AMD ROCm 10.0 / MI300X | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm10.0-Mi300X/README.md#xgmi-bandwidth-monitor) | Per-peer xGMI bandwidth and utilization |
+| NVIDIA CUDA 13.3 / H200 | [`nvsmi_combined_monitor.py`](NVIDIA/cuda13.3_H200/README.md#combined-monitor) | Collect and merge GPU telemetry with aggregate physical-link NVLink utilization |
+| NVIDIA CUDA 13.3 / H200 | [`nvsmi_gpu_monitor.py`](NVIDIA/cuda13.3_H200/README.md#gpu-telemetry-monitor) | Power, temperature, utilization, clocks, memory, ECC, and PCIe telemetry |
+| NVIDIA CUDA 13.3 / H200 | [`nvsmi_nvlink_bw_monitor.py`](NVIDIA/cuda13.3_H200/README.md#nvlink-bandwidth-monitor) | Per-physical-link NVLink bandwidth and utilization from cumulative counters |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_iio_combined_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#combined-cpu-and-iio-monitor) | Concurrent CPU/UPI and IIO telemetry in one timestamp-aligned CSV |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
@@ -138,11 +154,14 @@ layout, or topology. Review and validate them on the target system before use.
 | AMD ROCm 7.2 GPU-to-GPU xGMI bandwidth | [`amdsmi_xgmi_bw_monitor.py`](AMD/rocm7.2-Mi300X/README.md#xgmi-bandwidth-monitor) |
 | Combined AMD ROCm 7.2 GPU and xGMI telemetry | [`amdsmi_combined_monitor.py`](AMD/rocm7.2-Mi300X/README.md#combined-monitor) |
 | AMD ROCm 10 GPU or xGMI telemetry | [ROCm 10 MI300X toolkit](AMD/rocm10.0-Mi300X/README.md#usage) |
+| NVIDIA H200 power, temperature, utilization, clocks, memory, and PCIe | [`nvsmi_gpu_monitor.py`](NVIDIA/cuda13.3_H200/README.md#gpu-telemetry-monitor) |
+| NVIDIA H200 physical-link NVLink bandwidth | [`nvsmi_nvlink_bw_monitor.py`](NVIDIA/cuda13.3_H200/README.md#nvlink-bandwidth-monitor) |
+| Combined NVIDIA H200 GPU and NVLink telemetry | [`nvsmi_combined_monitor.py`](NVIDIA/cuda13.3_H200/README.md#combined-monitor) |
 | Intel CPU metrics or per-link UPI utilization | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) |
 | CPU-to-GPU PCIe bandwidth by root port or device | [`pcm_iio_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) |
 | Approximate aggregate Intel PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#limits-of-pcm-pcie) |
 | AMD EPYC Milan PCIe, DRAM, or intersocket xGMI counters | [`0x19_0x01.conf`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/0x19_0x01.conf) |
-| NVIDIA PCIe or NVLink throughput | The corresponding utility under `NVIDIA/legacy/` |
+| Older NVIDIA PCIe or NVLink collection workflow | The corresponding utility under `NVIDIA/legacy/` |
 | Mellanox InfiniBand throughput | `Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/` |
 | Flatten an older ROCm-SMI or iDRAC CSV | The corresponding parser under `AMD/legacy/` or `Dell/legacy/` |
 
@@ -182,6 +201,13 @@ so adding them would double-count the transfer. See the version-specific
 [mapping table](AMD/rocm7.2-Mi300X/README.md#rocm-72-peer-label-correction) and
 [complete overlap table](AMD/rocm7.2-Mi300X/README.md#which-counters-overlap-or-collide).
 
+On the validated H200 host, NVIDIA-SMI exposes NVLink traffic by physical link
+rather than remote GPU. Driver 610 uses `Data Tx` and `Data Rx` labels, while
+older output may use `Tx0` and `Rx0`; the current parser accepts both. Published
+Hopper capacity and `nvidia-smi nvlink --status` also present different link
+figures, so select the utilization basis explicitly when necessary. See the
+[H200 units and conversions](NVIDIA/cuda13.3_H200/README.md#units-and-conversions).
+
 When bringing a tool to another environment:
 
 1. Record the hardware topology and relevant software versions.
@@ -203,6 +229,7 @@ PerformanceProfiling/
 ├── Intel/
 │   └── pcm202604_sapphirerapids/
 ├── NVIDIA/
+│   ├── cuda13.3_H200/
 │   └── legacy/
 ├── Mellanox/
 │   └── legacy/
