@@ -31,10 +31,17 @@ class DmonTests(unittest.TestCase):
 class NvlinkTests(unittest.TestCase):
     SAMPLE = """GPU 0: NVIDIA H200 (UUID: GPU-a)\n\n Link 0: Tx0: 1000000 KiB\n Link 0: Rx0: 2000000 KiB\n Link 1: Tx0: 3000000 KiB\n Link 1: Rx0: 4000000 KiB\nGPU 2: NVIDIA H200 (UUID: GPU-b)\n Link 0: Tx0: 50 KiB\n Link 0: Rx0: 70 KiB\n"""
 
+    DRIVER_610_SAMPLE = """GPU 0: NVIDIA H200 (UUID: GPU-a)\n\t Link 0: Data Tx: 14984231343 KiB\n\t Link 0: Data Rx: 15105998777 KiB\n"""
+
     def test_parser_uses_gpu_and_link_ids(self) -> None:
         links = nvlink.parse_nvlink_counters(self.SAMPLE)
         self.assertEqual(set(links), {(0, 0), (0, 1), (2, 0)})
         self.assertEqual(links[(0, 1)].rx_kib, 4_000_000)
+
+    def test_parser_accepts_driver_610_data_labels(self) -> None:
+        link = nvlink.parse_nvlink_counters(self.DRIVER_610_SAMPLE)[(0, 0)]
+        self.assertEqual(link.tx_kib, 14_984_231_343)
+        self.assertEqual(link.rx_kib, 15_105_998_777)
 
     def test_rates_use_measured_elapsed_time(self) -> None:
         before = nvlink.Sample(10.0, 100.0, {(0, 0): nvlink.LinkCounter(0, 0, 0, 0)})

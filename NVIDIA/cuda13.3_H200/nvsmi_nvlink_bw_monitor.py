@@ -25,7 +25,7 @@ KIB_TO_GB = 1024.0 / 1_000_000_000.0
 H200_NVLINK_CAPACITY_GB_S = 50.0
 GPU_RE = re.compile(r"^GPU\s+(\d+)\s*:", re.IGNORECASE)
 LINK_RE = re.compile(
-    r"^\s*Link\s+(\d+)\s*:\s*(Tx|Rx)\d*\s*:\s*"
+    r"^\s*Link\s+(\d+)\s*:\s*(?:Data\s+)?(Tx|Rx)\d*\s*:\s*"
     r"([0-9]+(?:\.[0-9]+)?)\s*KiB\s*$", re.IGNORECASE
 )
 
