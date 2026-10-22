@@ -7,7 +7,7 @@
 ### Lightweight telemetry for accelerator servers
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Dell-555?logo=linux&logoColor=white)](#tool-catalog)
+[![Platforms](https://img.shields.io/badge/AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Slurm%20%7C%20Dell-555?logo=linux&logoColor=white)](#tool-catalog)
 [![Contributions](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](#contributing)
 
 Small, inspectable tools for collecting CPU, GPU, interconnect, network, and
@@ -45,6 +45,8 @@ The actively maintained toolkits cover:
 - AMD Instinct GPU telemetry, PCIe bandwidth, and peer-to-peer xGMI traffic.
 - NVIDIA H200 GPU telemetry, PCIe throughput, and physical-link NVLink traffic.
 - Intel CPU, cache, memory, power, PCIe IIO, and UPI counters.
+- InfiniBand port throughput from the Linux RDMA sysfs counters.
+- Multi-node Slurm jobs: one monitor per node and per-run link summaries.
 
 Older utilities for AMD EPYC, previous NVIDIA collectors, Mellanox InfiniBand,
 and Dell iDRAC are retained under `legacy/` for reference and reproducibility.
@@ -94,6 +96,17 @@ See the [CUDA 13.3 H200 monitoring guide](NVIDIA/cuda13.3_H200/README.md) for
 the `nvidia-smi dmon` schema, NVLink counter calculations, capacity choices,
 CSV fields, and the validated eight-GPU TransferBench matrix.
 
+### InfiniBand and Slurm jobs
+
+```bash
+python3 Mellanox/sysfs_mlx5/ib_port_bw_monitor.py --list
+python3 Mellanox/sysfs_mlx5/ib_port_bw_monitor.py -w 0.1 -W 10 --stdout
+```
+
+Inside a Slurm job, start one monitor per node, mark each run, and summarize
+the links per run; see the [Slurm job link monitor](Slurm/job_link_monitor/README.md)
+and its `example_job.sbatch`.
+
 ### Intel PCM
 
 Choose the directory matching the processor generation:
@@ -131,6 +144,10 @@ CUDA TransferBench validation workflows.
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_combined_monitor.py`](NVIDIA/cuda13.3_H200/README.md#combined-monitor) | Collect and merge GPU telemetry with aggregate physical-link NVLink utilization |
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_gpu_monitor.py`](NVIDIA/cuda13.3_H200/README.md#gpu-telemetry-monitor) | Power, temperature, utilization, clocks, memory, ECC, and PCIe telemetry |
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_nvlink_bw_monitor.py`](NVIDIA/cuda13.3_H200/README.md#nvlink-bandwidth-monitor) | Per-physical-link NVLink bandwidth and utilization from cumulative counters |
+| Linux RDMA sysfs / mlx5 | [`ib_port_bw_monitor.py`](Mellanox/sysfs_mlx5/README.md) | Per-port InfiniBand Rx/Tx bandwidth and utilization, no root needed |
+| Slurm | [`node_link_monitor.py`](Slurm/job_link_monitor/README.md) | One task per node: InfiniBand, NVLink and `dmon` monitors until a stop file |
+| Slurm | [`run_marker.py`](Slurm/job_link_monitor/README.md#usage) | Start/end markers per run, or wrap a command between them |
+| Slurm | [`window_summary.py`](Slurm/job_link_monitor/README.md#summary-csv) | Bytes, mean and peak rates per host, link and run window |
 | Intel PCM 202604 / Emerald Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
 | Intel PCM 202604 / Emerald Rapids | [`pcm_cpu_iio_combined_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#combined-cpu-and-iio-monitor) | Concurrent CPU/UPI and IIO telemetry in one timestamp-aligned CSV |
 | Intel PCM 202604 / Emerald Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
@@ -176,7 +193,8 @@ layout, or topology. Review and validate them on the target system before use.
 | Approximate aggregate Emerald Rapids PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#limits-of-pcm-pcie) |
 | AMD EPYC Milan PCIe, DRAM, or intersocket xGMI counters | [`0x19_0x01.conf`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/0x19_0x01.conf) |
 | Older NVIDIA PCIe or NVLink collection workflow | The corresponding utility under `NVIDIA/legacy/` |
-| Mellanox InfiniBand throughput | `Mellanox/legacy/Mellanox_Infiniband_Throughput_Counter/` |
+| Mellanox InfiniBand throughput | [`ib_port_bw_monitor.py`](Mellanox/sysfs_mlx5/README.md) (the legacy Bash loop is under `Mellanox/legacy/`) |
+| InfiniBand, NVLink and PCIe during each run of a multi-node job | [Slurm job link monitor](Slurm/job_link_monitor/README.md) |
 | Flatten an older ROCm-SMI or iDRAC CSV | The corresponding parser under `AMD/legacy/` or `Dell/legacy/` |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -247,7 +265,10 @@ PerformanceProfiling/
 │   ├── cuda13.3_H200/
 │   └── legacy/
 ├── Mellanox/
+│   ├── sysfs_mlx5/
 │   └── legacy/
+├── Slurm/
+│   └── job_link_monitor/
 ├── Dell/
 │   └── legacy/
 ├── LICENSE
