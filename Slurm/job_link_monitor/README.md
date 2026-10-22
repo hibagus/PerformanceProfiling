@@ -42,8 +42,7 @@ A monitor whose link is absent is not started (no HCA, no NVLink counters, no `n
 | Python | 3.9.25 and 3.10.12 |
 | Node | 8 × NVIDIA H200 (NVSwitch), driver 610.57.04, no HCA; without Slurm |
 | Check | A 2-GPU run of a stencil solver on GPUs 2 and 3: the NVLink bytes counted in its window, 4.2926 GB per GPU and direction, equal the bytes the application sends (8,192 ghost slots × 1,048 B × 500 stages) |
-
-Not yet run under Slurm or on an HCA; the first check is planned on TACC Vista (GH200, NDR 400).
+| Slurm | TACC Vista `gh-dev`, 8 GH200 nodes, NDR 400 (2026-10-22): the InfiniBand bytes of rank 0's node in an 8-node run's window, 23.24 GB, are the application's 23.07 GB of ghost data plus 0.7% of setup; the monitors cost nothing measurable (175.36 vs 175.24 ms/step) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

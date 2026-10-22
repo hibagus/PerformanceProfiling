@@ -38,9 +38,8 @@ which assumed device names and port counts and printed integer MiB/s.
 | Component | Version or configuration |
 | --- | --- |
 | Python | 3.9.25 and 3.10.12 (unit tests with a synthetic sysfs tree) |
-| Hardware | **Not yet validated on a live HCA.** The first hardware check is planned on TACC Vista (ConnectX-7, NDR 400) |
-
-Record the validation here when it is done (port list, a loopback or `ib_write_bw` run against the reported rate).
+| Hardware | TACC Vista `gh-dev`, 8 GH200 nodes, one ConnectX-7 port per node (`mlx5_0`, 400 Gb/s NDR, Active), 2026-10-22 |
+| Check | `--list` found `mlx5_0 port 1: InfiniBand, 4: ACTIVE, 50 GB/s per direction`; 10 s idle at `-w 0.1`: 100 rows, 0.1001 s intervals, zero rate. Busy: during an 8-node run of a stencil solver, the bytes transmitted by rank 0's node in the run's window, 23.24 GB, are the bytes the application sends (22,016 ghost slots × 1,048 B × 1,000 stages = 23.07 GB) plus 0.7% of setup traffic. No measurable overhead (175.36 ms/step without the monitors, 175.24 with) |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
