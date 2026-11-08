@@ -151,7 +151,7 @@ The default columns are the dynamic tags and the limits; `--all-tags` writes one
 | --- | --- |
 | `fresh`, `status` | 1 if the firmware's timer heartbeat advanced since the previous sample (the table refreshes every `telem_update_ms`, 100 ms); `ok`, `card_dead` or `error:<errno>` |
 | `power_w`, `current_a`, `vcore_mv` | ASIC core rail, whole W and A (the firmware truncates) |
-| `input_power_w` | Board 12 V input power in W: the whole card (GDDR, SerDes and Ethernet, regulators), not only the ASIC |
+| `input_power_w` | Board input power as the firmware uses it for its board-power limit: the value the board management controller (DMC) reports plus a fixed `additional_board_power` from the firmware table (+20 W on P150). Its absolute accuracy is **not verified**: on the tested cards it reads about 2× the ASIC rail under load and transients above 500 W, against a 300 W board power rating. Treat it as the firmware's control input, not a measured board power |
 | `aiclk_arb_min`, `aiclk_arb_max` | `MHz:arbiter` of the effective minimum (`fmin`, `busy`) and maximum (`fmax`, `tdp`, `fast_tdc`, `tdc`, `thm`, `board_power`, `voltage`, `gddr_thm`, `doppler_slow`, `doppler_critical`, `host_fmax`) clock arbiters |
 | `aiclk_ppm_info`, `limiter` | Why AICLK is what it is, e.g. `max_arb:tdc` = the TDC limit holds the clock down; `min_arb:busy` = the busy request sets it |
 | `enabled_min_arb`, `enabled_max_arb` | Which arbiters are active |
