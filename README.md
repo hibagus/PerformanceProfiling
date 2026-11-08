@@ -7,7 +7,7 @@
 ### Lightweight telemetry for accelerator servers
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Platforms](https://img.shields.io/badge/AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Mellanox%20%7C%20Slurm%20%7C%20Dell-555?logo=linux&logoColor=white)](#tool-catalog)
+[![Platforms](https://img.shields.io/badge/AMD%20%7C%20Intel%20%7C%20NVIDIA%20%7C%20Tenstorrent%20%7C%20Mellanox%20%7C%20Slurm%20%7C%20Dell-555?logo=linux&logoColor=white)](#tool-catalog)
 [![Contributions](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](#contributing)
 
 Small, inspectable tools for collecting CPU, GPU, interconnect, network, and
@@ -46,6 +46,8 @@ The actively maintained toolkits cover:
 - NVIDIA H200 GPU telemetry, PCIe throughput, and physical-link NVLink traffic.
 - Intel CPU, cache, memory, power, PCIe IIO, and UPI counters.
 - InfiniBand port throughput from the Linux RDMA sysfs counters.
+- Tenstorrent Blackhole power, clocks, firmware telemetry, PCIe traffic and per-link Ethernet traffic,
+  read without instrumenting kernels or changing the cards' power state.
 - Multi-node Slurm jobs: one monitor per node and per-run link summaries.
 
 Older utilities for AMD EPYC, previous NVIDIA collectors, Mellanox InfiniBand,
@@ -96,6 +98,21 @@ See the [CUDA 13.3 H200 monitoring guide](NVIDIA/cuda13.3_H200/README.md) for
 the `nvidia-smi dmon` schema, NVLink counter calculations, capacity choices,
 CSV fields, and the validated eight-GPU TransferBench matrix.
 
+### Tenstorrent Blackhole
+
+```bash
+cd Tenstorrent/kmd2.12_Blackhole
+python3 tt_card_monitor.py --list
+python3 tt_card_monitor.py -w 0.1 -W 60 --stdout          # sysfs only: power, clocks, PCIe
+python3 tt_arc_telemetry_monitor.py --dump -c 0           # every firmware telemetry tag
+python3 tt_eth_bw_monitor.py --links                      # Ethernet topology and totals
+python3 tt_eth_bw_monitor.py -w 0.1 -W 60 --stdout        # per-link bandwidth and FEC
+```
+
+See the [Blackhole monitoring guide](Tenstorrent/kmd2.12_Blackhole/README.md) for how each source is read
+(sysfs, or the driver's NoC-read ioctl on a power-neutral descriptor), counter units, CSV fields and the
+validation on a 4-card p150b server. Requires tt-kmd 2.12 or newer.
+
 ### InfiniBand and Slurm jobs
 
 ```bash
@@ -144,6 +161,9 @@ CUDA TransferBench validation workflows.
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_combined_monitor.py`](NVIDIA/cuda13.3_H200/README.md#combined-monitor) | Collect and merge GPU telemetry with aggregate physical-link NVLink utilization |
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_gpu_monitor.py`](NVIDIA/cuda13.3_H200/README.md#gpu-telemetry-monitor) | Power, temperature, utilization, clocks, memory, ECC, and PCIe telemetry |
 | NVIDIA CUDA 13.3 / H200 | [`nvsmi_nvlink_bw_monitor.py`](NVIDIA/cuda13.3_H200/README.md#nvlink-bandwidth-monitor) | Per-physical-link NVLink bandwidth and utilization from cumulative counters |
+| Tenstorrent Blackhole / tt-kmd 2.12 | [`tt_card_monitor.py`](Tenstorrent/kmd2.12_Blackhole/README.md#csv-fields) | Power, clocks, temperature, limits and PCIe bandwidth per card, from sysfs only |
+| Tenstorrent Blackhole / tt-kmd 2.12 | [`tt_arc_telemetry_monitor.py`](Tenstorrent/kmd2.12_Blackhole/README.md#csv-fields) | All firmware telemetry tags: board input power, clock-limiting arbiter, GDDR temperatures, Ethernet link state |
+| Tenstorrent Blackhole / tt-kmd 2.12 | [`tt_eth_bw_monitor.py`](Tenstorrent/kmd2.12_Blackhole/README.md#csv-fields) | Per-link Ethernet bandwidth, utilization, frame and FEC counters from the MAC counters |
 | Linux RDMA sysfs / mlx5 | [`ib_port_bw_monitor.py`](Mellanox/sysfs_mlx5/README.md) | Per-port InfiniBand Rx/Tx bandwidth and utilization, no root needed |
 | Slurm | [`node_link_monitor.py`](Slurm/job_link_monitor/README.md) | One task per node: InfiniBand, NVLink and `dmon` monitors until a stop file |
 | Slurm | [`run_marker.py`](Slurm/job_link_monitor/README.md#usage) | Start/end markers per run, or wrap a command between them |
@@ -193,6 +213,9 @@ layout, or topology. Review and validate them on the target system before use.
 | Approximate aggregate Emerald Rapids PCIe traffic by socket | [`pcm_pcie_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#limits-of-pcm-pcie) |
 | AMD EPYC Milan PCIe, DRAM, or intersocket xGMI counters | [`0x19_0x01.conf`](AMD/legacy/AMD_EPYC_Milan_PCIe_xGMI_MEM_BW_Monitor/0x19_0x01.conf) |
 | Older NVIDIA PCIe or NVLink collection workflow | The corresponding utility under `NVIDIA/legacy/` |
+| Tenstorrent Blackhole card power, clocks and PCIe traffic | [`tt_card_monitor.py`](Tenstorrent/kmd2.12_Blackhole/README.md) |
+| Tenstorrent Blackhole firmware telemetry (input power, throttling arbiter, GDDR) | [`tt_arc_telemetry_monitor.py`](Tenstorrent/kmd2.12_Blackhole/README.md) |
+| Tenstorrent Blackhole Ethernet link bandwidth | [`tt_eth_bw_monitor.py`](Tenstorrent/kmd2.12_Blackhole/README.md) |
 | Mellanox InfiniBand throughput | [`ib_port_bw_monitor.py`](Mellanox/sysfs_mlx5/README.md) (the legacy Bash loop is under `Mellanox/legacy/`) |
 | InfiniBand, NVLink and PCIe during each run of a multi-node job | [Slurm job link monitor](Slurm/job_link_monitor/README.md) |
 | Flatten an older ROCm-SMI or iDRAC CSV | The corresponding parser under `AMD/legacy/` or `Dell/legacy/` |
@@ -264,6 +287,8 @@ PerformanceProfiling/
 ├── NVIDIA/
 │   ├── cuda13.3_H200/
 │   └── legacy/
+├── Tenstorrent/
+│   └── kmd2.12_Blackhole/
 ├── Mellanox/
 │   ├── sysfs_mlx5/
 │   └── legacy/
@@ -308,6 +333,7 @@ Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 - [Intel Performance Counter Monitor](https://github.com/intel/pcm)
 - [NVIDIA System Management Interface](https://developer.nvidia.com/system-management-interface)
 - [NVIDIA Networking](https://www.nvidia.com/en-us/networking/)
+- [Tenstorrent tt-kmd](https://github.com/tenstorrent/tt-kmd), [tt-metal](https://github.com/tenstorrent/tt-metal) and [tt-system-firmware](https://github.com/tenstorrent/tt-system-firmware)
 - [Dell Technologies iDRAC](https://www.dell.com/en-us/lp/dt/open-manage-idrac)
 - README structure inspired by
   [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
