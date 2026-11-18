@@ -55,14 +55,20 @@ Samples are timestamped as their output arrives (the tool runs on a pty, so its 
 
 ## Dell PowerEdge XE9680L (8× H200 SXM) validation topology
 
-Four PEX89144 B0 switches (firmware 04.160.03.10), each in virtual mode with **two partitions**. Each partition has its own x16 Gen5 host port to a separate CPU root port, and one H200 on an x16 Gen5 downstream port. GPU-to-GPU PCIe traffic therefore always goes up to the CPU, even between the two GPUs on one physical switch. Switch 1 as discovered on 2026-11-18:
+Four PEX89144 B0 switches (firmware 04.160.03.10), each in virtual mode with **two partitions**. Each partition has its own x16 Gen5 host port to a separate CPU root port, and one H200 on an x16 Gen5 downstream port. GPU-to-GPU PCIe traffic therefore always goes up to the CPU, even between the two GPUs on one physical switch. The two GPUs on a switch are always on the same CPU socket. Live capture, 2026-11-18:
 
-| Switch (mgmt PCI) | Host port → CPU root port | GPU downstream port (slot) → GPU | Other active downstream ports |
-| --- | --- | --- | --- |
-| 1 (`1c:00`) | 80 → `37:01.0` | 96 (slot 24) → `3c:00.0` | 32 (x4 Gen4, slot 167) |
-| 1 (`1c:00`) | 128 → `15:01.0` | 112 (slot 28) → `1b:00.0` | 36 (x4 Gen4, slot 166) |
+| Switch (mgmt PCI) | Host port → CPU root port | GPU downstream port (slot) → GPU (nvidia-smi index) |
+| --- | --- | --- |
+| 1 (`1c:00`) | 128 → `15:01.0` | 112 (slot 28) → `1b:00.0` (GPU0) |
+| 1 (`1c:00`) | 80 → `37:01.0` | 96 (slot 24) → `3c:00.0` (GPU1) |
+| 2 (`60:00`) | 128 → `48:01.0` | 48 (slot 27) → `4b:00.0` (GPU2) |
+| 2 (`60:00`) | 16 → `59:01.0` | 32 (slot 23) → `5c:00.0` (GPU3) |
+| 3 (`9d:00`) | 16 → `97:01.0` | 32 (slot 21) → `9a:00.0` (GPU4) |
+| 3 (`9d:00`) | 128 → `b7:01.0` | 48 (slot 25) → `bb:00.0` (GPU5) |
+| 4 (`ce:00`) | 96 → `c7:01.0` | 64 (slot 26) → `cd:00.0` (GPU6) |
+| 4 (`ce:00`) | 128 → `d7:01.0` | 80 (slot 22) → `dc:00.0` (GPU7) |
 
-Run `--topology-only` for switches 2–4. **Do not map ports by bus number.** The switch reports partition-local bus ranges, which only sometimes coincide with Linux bus numbers. The tool maps by physical slot (`PhysSlot` → `/sys/bus/pci/slots/<n>/address`).
+Port numbers differ between switches, so always take them from the topology CSV. **Do not map ports by bus number.** The switch reports partition-local bus ranges, which only sometimes coincide with Linux bus numbers. The tool maps by physical slot (`PhysSlot` → `/sys/bus/pci/slots/<n>/address`).
 
 Max payload size on the GPU ports is 256 B (MPSS 2048), so a GPU-to-GPU write at full efficiency shows `payload_avg_tlp_B` ≈ 256.
 
