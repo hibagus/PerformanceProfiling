@@ -172,6 +172,7 @@ CUDA TransferBench validation workflows.
 | Intel PCM 202604 / Emerald Rapids | [`pcm_cpu_iio_combined_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#combined-cpu-and-iio-monitor) | Concurrent CPU/UPI and IIO telemetry in one timestamp-aligned CSV |
 | Intel PCM 202604 / Emerald Rapids | [`pcm_pcie_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#limits-of-pcm-pcie) | Approximate socket-level PCIe transaction activity |
 | Intel PCM 202604 / Emerald Rapids | [`pcm_iio_monitor.py`](Intel/pcm202604_emeraldrapids/README.md#why-pcm-iio-is-preferred-for-gpu-traffic) | PCIe bandwidth by socket, IIO stack, root port, and device |
+| Broadcom G4XTOOLS 4.14 / PEX89000 | [`g4x_perf_monitor.py`](Broadcom/g4xtools4.14_pex89000/README.md) | Per-port PCIe switch bandwidth, utilization, TLP counters and switch-port → GPU/root-port map |
 | Intel PCM 202604 / Emerald Rapids | [`validate_pcm_transferbench.py`](Intel/pcm202604_emeraldrapids/README.md#controlled-validation) | Focused CUDA PCIe, IIO, and UPI validation cases |
 | Intel PCM 202604 / Emerald Rapids | [`validate_pcm_cpu_gpu_matrix.py`](Intel/pcm202604_emeraldrapids/README.md#full-cpu-to-gpu-matrix) | Complete CPU-NUMA × GPU × direction validation matrix |
 | Intel PCM 202604 / Sapphire Rapids | [`pcm_cpu_monitor.py`](Intel/pcm202604_sapphirerapids/README.md#choosing-a-monitor) | CPU, cache, memory, power, and UPI telemetry |
