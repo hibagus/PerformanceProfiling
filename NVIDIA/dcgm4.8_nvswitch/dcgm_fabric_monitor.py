@@ -25,6 +25,7 @@ import pty
 import re
 import select
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -35,6 +36,7 @@ GPU_FIELDS = [155, 100, 449]
 GPU_PROF_FIELDS = [1009, 1010, 1011, 1012, 1001, 1002, 1005]
 CUMULATIVE = {1695: "nvswitch_tx", 1696: "nvswitch_rx"}     # bytes since boot -> rate
 LINE = re.compile(r"^(GPU|Switch)\s+(\d+)\s+(.*)$")
+PROCS: list = []          # running dmon children, stopped on SIGINT/SIGTERM
 
 
 def utcnow() -> dt.datetime:
@@ -55,6 +57,7 @@ def stream(cmd: list[str], raw_path: Path, on_line) -> int:
     """Run cmd on a pty so each sample is stamped when it is printed."""
     master, slave = pty.openpty()
     proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=slave, stderr=slave)
+    PROCS.append(proc)
     os.close(slave)
     buf = b""
     with open(raw_path, "wb") as raw:
@@ -134,7 +137,8 @@ def add_rates(rows: list[dict]):
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="NVSwitch and GPU fabric telemetry with DCGM dmon.")
     p.add_argument("-w", "--interval-ms", type=int, default=1000, help="sample interval in ms (default 1000)")
-    p.add_argument("-n", "--samples", type=int, default=10, help="number of samples (default 10)")
+    p.add_argument("-n", "--samples", type=int, default=10,
+                   help="number of samples (default 10); SIGINT/SIGTERM stops early and still writes the CSV")
     p.add_argument("-o", "--output", help="CSV path (default: <UTC timestamp>_dcgm_fabric.csv)")
     p.add_argument("--switches", default="all", help="NVSwitch ids, comma-separated (default: all)")
     p.add_argument("--gpus", default="all", help="GPU ids, comma-separated (default: all); 'none' to skip")
@@ -158,6 +162,12 @@ def main() -> int:
     jobs = [("Switch", args.switches, SWITCH_FIELDS)]
     if args.gpus != "none":
         jobs.append(("GPU", args.gpus, GPU_FIELDS + (GPU_PROF_FIELDS if args.gpu_prof else [])))
+    def stop(signum, _frame):        # end sampling early but still write the CSV
+        for pr in PROCS:
+            if pr.poll() is None:
+                pr.terminate()
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
     threads = [threading.Thread(target=sample_group, args=(args.dcgmi, k, ids, f, args, raw_dir, rows, lock))
                for k, ids, f in jobs]
     print(f"sampling {args.samples} x {args.interval_ms} ms -> {out}")
